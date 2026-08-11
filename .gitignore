@@ -1,6 +1,7 @@
 node_modules/
 dist/
 backend/target/
+.worktrees/
 .DS_Store
 *.log
 
