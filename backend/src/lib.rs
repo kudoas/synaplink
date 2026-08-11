@@ -385,6 +385,7 @@ fn search_tag(tag: String, state: State<'_, AppState>) -> Result<Vec<NoteSummary
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let settings = load_settings(app.handle());
             app.manage(AppState(Mutex::new(AppData {
