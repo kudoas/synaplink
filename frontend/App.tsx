@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
-import { MemoEditor } from "./components/MemoEditor";
+import { DocumentEditor } from "./components/DocumentEditor";
 import { TagResults } from "./components/TagResults";
 import { uniqueTags } from "./tag-parser";
 import type { NoteDocument, NoteSummary } from "./types";
@@ -274,26 +274,19 @@ export function App() {
               ゴミ箱へ
             </button>
           </header>
-          <div className="document-body">
-            <input
-              className="title-input"
-              aria-label="タイトル"
-              value={draft.title}
-              placeholder="無題"
-              onChange={(event) => {
-                setDraft({ ...draft, title: event.target.value });
-                setSaveState("dirty");
-              }}
-            />
-            <MemoEditor
-              value={draft.body}
-              onChange={(body) => {
-                setDraft((current) => (current ? { ...current, body } : current));
-                setSaveState("dirty");
-              }}
-              onOpenTag={(tag) => void openTag(tag)}
-            />
-          </div>
+          <DocumentEditor
+            body={draft.body}
+            onBodyChange={(body) => {
+              setDraft((current) => (current ? { ...current, body } : current));
+              setSaveState("dirty");
+            }}
+            onOpenTag={(tag) => void openTag(tag)}
+            onTitleChange={(title) => {
+              setDraft({ ...draft, title });
+              setSaveState("dirty");
+            }}
+            title={draft.title}
+          />
         </main>
       ) : (
         <main className="empty-view">

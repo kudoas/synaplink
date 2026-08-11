@@ -1,13 +1,19 @@
 import { basicSetup } from "codemirror";
-import { Annotation, EditorState, RangeSetBuilder } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
-import { useEffect, useRef } from "react";
+import { Annotation, EditorState, Prec, RangeSetBuilder } from "@codemirror/state";
+import { Decoration, EditorView, keymap, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import { parseTags } from "../tag-parser";
 
 interface Props {
   value: string;
   onChange: (value: string) => void;
+  onNavigateBackward: () => void;
   onOpenTag: (tag: string) => void;
+  ref?: Ref<MemoEditorHandle>;
+}
+
+export interface MemoEditorHandle {
+  focusAtStart: () => void;
 }
 
 function tagDecorations(view: EditorView): DecorationSet {
@@ -42,27 +48,61 @@ const tagPlugin = ViewPlugin.fromClass(
 
 const externalValueSync = Annotation.define<boolean>();
 
-export function MemoEditor({ value, onChange, onOpenTag }: Props) {
+export function MemoEditor({ value, onChange, onNavigateBackward, onOpenTag, ref }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const initialValue = useRef(value);
   const changeHandler = useRef(onChange);
+  const navigateBackwardHandler = useRef(onNavigateBackward);
   const tagHandler = useRef(onOpenTag);
 
   useEffect(() => {
     changeHandler.current = onChange;
+    navigateBackwardHandler.current = onNavigateBackward;
     tagHandler.current = onOpenTag;
-  }, [onChange, onOpenTag]);
+  }, [onChange, onNavigateBackward, onOpenTag]);
+
+  useImperativeHandle(ref, () => ({
+    focusAtStart() {
+      const view = editor.current;
+      if (!view) {
+        return;
+      }
+      view.dispatch({ scrollIntoView: true, selection: { anchor: 0 } });
+      view.focus();
+    },
+  }));
 
   useEffect(() => {
     if (!host.current) {
       return;
     }
+    const navigateBackwardKeymap = Prec.highest(
+      keymap.of([
+        {
+          key: "ArrowUp",
+          run(view) {
+            const { selection } = view.state;
+            if (
+              view.compositionStarted ||
+              selection.ranges.length !== 1 ||
+              !selection.main.empty ||
+              view.state.doc.lineAt(selection.main.head).number !== 1
+            ) {
+              return false;
+            }
+            navigateBackwardHandler.current();
+            return true;
+          },
+        },
+      ]),
+    );
     const view = new EditorView({
       parent: host.current,
       state: EditorState.create({
         doc: initialValue.current,
         extensions: [
+          navigateBackwardKeymap,
           basicSetup,
           tagPlugin,
           EditorView.lineWrapping,
