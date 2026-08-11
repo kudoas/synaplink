@@ -4,11 +4,11 @@ import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate
 import { useEffect, useRef } from "react";
 import { parseTags } from "../tag-parser";
 
-type Props = {
+interface Props {
   value: string;
   onChange: (value: string) => void;
   onOpenTag: (tag: string) => void;
-};
+}
 
 function tagDecorations(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
@@ -17,8 +17,8 @@ function tagDecorations(view: EditorView): DecorationSet {
       tag.from,
       tag.to,
       Decoration.mark({
-        class: "cm-zettel-tag",
         attributes: { "data-tag": tag.displayName, title: "⌘クリックで関連メモを表示" },
+        class: "cm-zettel-tag",
       }),
     );
   }
@@ -32,7 +32,9 @@ const tagPlugin = ViewPlugin.fromClass(
       this.decorations = tagDecorations(view);
     }
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) this.decorations = tagDecorations(update.view);
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = tagDecorations(update.view);
+      }
     }
   },
   { decorations: (plugin) => plugin.decorations },
@@ -41,45 +43,57 @@ const tagPlugin = ViewPlugin.fromClass(
 export function MemoEditor({ value, onChange, onOpenTag }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
+  const initialValue = useRef(value);
   const changeHandler = useRef(onChange);
   const tagHandler = useRef(onOpenTag);
-  changeHandler.current = onChange;
-  tagHandler.current = onOpenTag;
 
   useEffect(() => {
-    if (!host.current) return;
+    changeHandler.current = onChange;
+    tagHandler.current = onOpenTag;
+  }, [onChange, onOpenTag]);
+
+  useEffect(() => {
+    if (!host.current) {
+      return;
+    }
     const view = new EditorView({
       parent: host.current,
       state: EditorState.create({
-        doc: value,
+        doc: initialValue.current,
         extensions: [
           basicSetup,
           tagPlugin,
           EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) changeHandler.current(update.state.doc.toString());
+            if (update.docChanged) {
+              changeHandler.current(update.state.doc.toString());
+            }
           }),
           EditorView.domEventHandlers({
             mousedown(event) {
-              if (!event.metaKey) return false;
-              const target = (event.target as HTMLElement).closest<HTMLElement>(".cm-zettel-tag");
+              if (!event.metaKey) {
+                return false;
+              }
+              const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(".cm-zettel-tag") : null;
               const tag = target?.dataset.tag;
-              if (!tag) return false;
+              if (!tag) {
+                return false;
+              }
               event.preventDefault();
               tagHandler.current(tag);
               return true;
             },
           }),
           EditorView.theme({
-            "&": { height: "100%", backgroundColor: "transparent" },
-            ".cm-scroller": { fontFamily: "var(--font-body)", lineHeight: "1.8" },
+            "&": { backgroundColor: "transparent", height: "100%" },
             ".cm-content": { padding: "20px 4px 120px" },
-            ".cm-gutters": { display: "none" },
             ".cm-focused": { outline: "none" },
+            ".cm-gutters": { display: "none" },
+            ".cm-scroller": { fontFamily: "var(--font-body)", lineHeight: "1.8" },
             ".cm-zettel-tag": {
-              color: "var(--accent)",
               backgroundColor: "var(--accent-soft)",
               borderRadius: "4px",
+              color: "var(--accent)",
               cursor: "pointer",
             },
           }),
@@ -87,13 +101,17 @@ export function MemoEditor({ value, onChange, onOpenTag }: Props) {
       }),
     });
     editor.current = view;
-    return () => view.destroy();
+    return () => {
+      view.destroy();
+    };
   }, []);
 
   useEffect(() => {
     const view = editor.current;
-    if (!view || view.state.doc.toString() === value) return;
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+    if (!view || view.state.doc.toString() === value) {
+      return;
+    }
+    view.dispatch({ changes: { from: 0, insert: value, to: view.state.doc.length } });
   }, [value]);
 
   return <div className="memo-editor" ref={host} />;

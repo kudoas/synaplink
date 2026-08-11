@@ -38,11 +38,16 @@ Web UIのみを起動する場合は `pnpm dev` を使います。ただし、�
 ## テストとビルド
 
 ```sh
+pnpm lint
 pnpm test
 pnpm build
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml
 pnpm tauri build --bundles app
 ```
+
+TypeScriptはOxlintの全カテゴリと型情報付きチェックを使用します。相互に矛盾するルールや、React・Tauriの設計と両立しないルールのみ `.oxlintrc.json` で明示的に除外しています。Rustはrustfmtに加え、Clippyの `all`、`pedantic`、`nursery`、`cargo` と安全性に関するrestrictionルールをdenyで実行します。
 
 ## データ形式
 

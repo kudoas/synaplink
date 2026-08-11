@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A local-first Zettelkasten memo app"
 authors = ["kudoas"]
 edition = "2021"
+publish = false
 
 [lib]
 name = "zettel_memo_lib"
@@ -24,3 +25,24 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+dbg_macro = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+# Transitive dependency versions are outside this crate's control.
+multiple_crate_versions = "allow"
+# This private desktop application is not published as a crates.io package.
+cargo_common_metadata = "allow"
+# Tauri command handlers must own deserialized arguments and framework state handles.
+needless_pass_by_value = "allow"

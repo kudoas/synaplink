@@ -1,9 +1,9 @@
-export type TagOccurrence = {
+export interface TagOccurrence {
   displayName: string;
   normalizedName: string;
   from: number;
   to: number;
-};
+}
 
 const isTagCharacter = (character: string) => /[\p{L}\p{N}_-]/u.test(character);
 
@@ -17,7 +17,7 @@ export function parseTags(content: string): TagOccurrence[] {
 
   while (cursor < content.length) {
     if (content[cursor] !== "#") {
-      cursor += content.codePointAt(cursor)! > 0xffff ? 2 : 1;
+      cursor += content.codePointAt(cursor)! > 0xFFFF ? 2 : 1;
       continue;
     }
 
@@ -34,16 +34,18 @@ export function parseTags(content: string): TagOccurrence[] {
     while (end < content.length) {
       const point = content.codePointAt(end)!;
       const character = String.fromCodePoint(point);
-      if (!isTagCharacter(character)) break;
-      end += point > 0xffff ? 2 : 1;
+      if (!isTagCharacter(character)) {
+        break;
+      }
+      end += point > 0xFFFF ? 2 : 1;
     }
 
     if (end > cursor + 1) {
       const displayName = content.slice(cursor + 1, end);
       tags.push({
         displayName,
-        normalizedName: normalizeTag(displayName),
         from: cursor,
+        normalizedName: normalizeTag(displayName),
         to: end,
       });
       cursor = end;
@@ -58,7 +60,9 @@ export function parseTags(content: string): TagOccurrence[] {
 export function uniqueTags(content: string): TagOccurrence[] {
   const seen = new Set<string>();
   return parseTags(content).filter((tag) => {
-    if (seen.has(tag.normalizedName)) return false;
+    if (seen.has(tag.normalizedName)) {
+      return false;
+    }
     seen.add(tag.normalizedName);
     return true;
   });

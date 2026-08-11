@@ -79,6 +79,7 @@ fn is_tag_character(character: char) -> bool {
     character.is_alphanumeric() || matches!(character, '_' | '-')
 }
 
+#[must_use]
 pub fn extract_tags(content: &str) -> Vec<TagReference> {
     let mut tags = Vec::new();
     let chars: Vec<(usize, char)> = content.char_indices().collect();
@@ -111,7 +112,7 @@ pub fn extract_tags(content: &str) -> Vec<TagReference> {
 
         if end > start {
             let start_byte = chars[start].0;
-            let end_byte = chars.get(end).map(|item| item.0).unwrap_or(content.len());
+            let end_byte = chars.get(end).map_or(content.len(), |item| item.0);
             let display_name = content[start_byte..end_byte].to_string();
             tags.push(TagReference {
                 normalized_name: normalize_tag(&display_name),
@@ -142,10 +143,12 @@ fn modified_at(path: &Path) -> Result<u64, String> {
     let modified = fs::metadata(path)
         .and_then(|metadata| metadata.modified())
         .map_err(|error| format!("更新日時を取得できません: {error}"))?;
-    Ok(modified
+    modified
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis() as u64)
+        .as_millis()
+        .try_into()
+        .map_err(|_| "更新日時が扱える範囲を超えています".to_string())
 }
 
 fn split_document(content: &str) -> (String, String) {
@@ -269,7 +272,7 @@ fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
             .open(&temporary)
             .map_err(|error| format!("一時ファイルを作成できません: {error}"))?;
         file.write_all(content.as_bytes())
-            .and_then(|_| file.sync_all())
+            .and_then(|()| file.sync_all())
             .map_err(|error| format!("メモを書き込めません: {error}"))?;
         fs::rename(&temporary, path)
             .map_err(|error| format!("メモを置き換えられません: {error}"))?;
@@ -366,6 +369,11 @@ fn search_tag(tag: String, state: State<'_, AppState>) -> Result<Vec<NoteSummary
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Starts the Tauri desktop application.
+///
+/// # Panics
+///
+/// Panics when the Tauri runtime cannot be started.
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

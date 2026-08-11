@@ -1,0 +1,120 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "react", "unicorn", "oxc", "import", "jsdoc", "jsx-a11y", "react-perf", "promise"],
+  "env": {
+    "browser": true,
+    "es2022": true,
+    "vitest": false,
+    "node": false
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "pedantic": "error",
+    "perf": "error",
+    "style": "error",
+    "restriction": "error",
+    "nursery": "error"
+  },
+  "options": {
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error",
+    "typeAware": true,
+    "typeCheck": true
+  },
+  "rules": {
+    "eslint/func-style": "off",
+    "eslint/max-lines": "off",
+    "eslint/max-lines-per-function": "off",
+    "eslint/max-statements": "off",
+    "eslint/no-alert": "off",
+    "eslint/no-continue": "off",
+    "eslint/no-magic-numbers": "off",
+    "eslint/no-nested-ternary": "off",
+    "eslint/no-shadow": "off",
+    "eslint/no-ternary": "off",
+    "eslint/no-void": "off",
+    "eslint/require-await": "off",
+    "eslint/sort-imports": "off",
+    "import/exports-last": "off",
+    "import/group-exports": "off",
+    "import/consistent-type-specifier-style": "off",
+    "import/no-named-export": "off",
+    "import/no-relative-parent-imports": "off",
+    "import/no-unassigned-import": "off",
+    "import/prefer-default-export": "off",
+    "oxc/no-async-await": "off",
+    "oxc/no-optional-chaining": "off",
+    "oxc/no-rest-spread-properties": "off",
+    "promise/prefer-await-to-callbacks": "off",
+    "promise/prefer-await-to-then": "off",
+    "react/button-has-type": "off",
+    "react/jsx-filename-extension": "off",
+    "react/jsx-max-depth": "off",
+    "react/jsx-no-literals": "off",
+    "react/react-in-jsx-scope": "off",
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "react-perf/jsx-no-new-array-as-prop": "off",
+    "react-perf/jsx-no-new-function-as-prop": "off",
+    "typescript/consistent-return": "off",
+    "typescript/explicit-function-return-type": "off",
+    "typescript/explicit-member-accessibility": "off",
+    "typescript/explicit-module-boundary-types": "off",
+    "typescript/no-invalid-void-type": "off",
+    "typescript/no-non-null-assertion": "off",
+    "typescript/prefer-readonly-parameter-types": "off",
+    "typescript/strict-boolean-expressions": "off",
+    "typescript/use-unknown-in-catch-callback-variable": "off",
+    "unicorn/filename-case": "off",
+    "unicorn/no-nested-ternary": "off",
+    "unicorn/no-null": "off",
+    "unicorn/numeric-separators-style": "off",
+    "unicorn/prefer-global-this": "off"
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**/*.ts"],
+      "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "vitest", "node"],
+      "env": {
+        "browser": true,
+        "es2022": true,
+        "vitest": true,
+        "node": true
+      },
+      "rules": {
+        "typescript/strict-void-return": "off",
+        "vitest/no-importing-vitest-globals": "off",
+        "vitest/prefer-expect-assertions": "off",
+        "vitest/prefer-importing-vitest-globals": "off",
+        "vitest/require-mock-type-parameters": "off",
+        "vitest/require-test-timeout": "off",
+        "vitest/valid-title": "off"
+      }
+    },
+    {
+      "files": ["src/vite-env.d.ts"],
+      "rules": {
+        "import/unambiguous": "off",
+        "unicorn/require-module-specifiers": "off"
+      }
+    },
+    {
+      "files": ["vite.config.ts"],
+      "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "node"],
+      "env": {
+        "browser": false,
+        "es2022": true,
+        "node": true
+      },
+      "rules": {
+        "import/no-default-export": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["dist/**", "node_modules/**", "src-tauri/**"],
+  "settings": {
+    "react": {
+      "version": "19"
+    }
+  }
+}
