@@ -41,9 +41,9 @@ Web UIのみを起動する場合は `pnpm dev` を使います。ただし、�
 pnpm lint
 pnpm test
 pnpm build
-cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo fmt --manifest-path backend/Cargo.toml -- --check
+cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path backend/Cargo.toml
 pnpm tauri build --bundles app
 ```
 

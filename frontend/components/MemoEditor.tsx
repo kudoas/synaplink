@@ -1,5 +1,5 @@
 import { basicSetup } from "codemirror";
-import { EditorState, RangeSetBuilder } from "@codemirror/state";
+import { Annotation, EditorState, RangeSetBuilder } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 import { parseTags } from "../tag-parser";
@@ -40,6 +40,8 @@ const tagPlugin = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
+const externalValueSync = Annotation.define<boolean>();
+
 export function MemoEditor({ value, onChange, onOpenTag }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
@@ -65,7 +67,8 @@ export function MemoEditor({ value, onChange, onOpenTag }: Props) {
           tagPlugin,
           EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) {
+            const isExternalValueSync = update.transactions.some((transaction) => transaction.annotation(externalValueSync));
+            if (update.docChanged && !isExternalValueSync) {
               changeHandler.current(update.state.doc.toString());
             }
           }),
@@ -111,7 +114,10 @@ export function MemoEditor({ value, onChange, onOpenTag }: Props) {
     if (!view || view.state.doc.toString() === value) {
       return;
     }
-    view.dispatch({ changes: { from: 0, insert: value, to: view.state.doc.length } });
+    view.dispatch({
+      annotations: externalValueSync.of(true),
+      changes: { from: 0, insert: value, to: view.state.doc.length },
+    });
   }, [value]);
 
   return <div className="memo-editor" ref={host} />;

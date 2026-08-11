@@ -334,19 +334,27 @@ fn create_note(state: State<'_, AppState>) -> Result<NoteDocument, String> {
     document_from_path(&path)
 }
 
-#[tauri::command]
-fn save_note(input: SaveNoteInput, state: State<'_, AppState>) -> Result<SaveResult, String> {
-    let path = resolve_note(&current_vault(&state)?, &input.id)?;
-    let current = document_from_path(&path)?;
+fn save_note_at_path(input: &SaveNoteInput, path: &Path) -> Result<SaveResult, String> {
+    let current = document_from_path(path)?;
     if current.revision != input.expected_revision && input.overwrite != Some(true) {
         return Ok(SaveResult::Conflict { current });
     }
     let body = input.body.replace("\r\n", "\n");
     let title = input.title.replace(['\r', '\n'], " ");
-    atomic_write(&path, &format!("{title}\n{body}"))?;
+    let content = format!("{title}\n{body}");
+    if revision(&content) == current.revision {
+        return Ok(SaveResult::Saved { note: current });
+    }
+    atomic_write(path, &content)?;
     Ok(SaveResult::Saved {
-        note: document_from_path(&path)?,
+        note: document_from_path(path)?,
     })
+}
+
+#[tauri::command]
+fn save_note(input: SaveNoteInput, state: State<'_, AppState>) -> Result<SaveResult, String> {
+    let path = resolve_note(&current_vault(&state)?, &input.id)?;
+    save_note_at_path(&input, &path)
 }
 
 #[tauri::command]
@@ -404,6 +412,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{thread, time::Duration};
 
     #[test]
     fn extracts_supported_tags_and_stops_at_punctuation() {
@@ -437,5 +446,85 @@ mod tests {
         assert_eq!(note.title, "題名");
         assert_eq!(note.body, "本文 #タグ");
         assert_eq!(note.tags[0].normalized_name, "タグ");
+    }
+
+    #[test]
+    fn skips_writing_when_normalized_content_is_unchanged() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("note.txt");
+        atomic_write(&path, "題名 本文\n1行目\n2行目").unwrap();
+        let original = document_from_path(&path).unwrap();
+        thread::sleep(Duration::from_millis(10));
+
+        let result = save_note_at_path(
+            &SaveNoteInput {
+                id: "note.txt".to_string(),
+                title: "題名\r本文".to_string(),
+                body: "1行目\r\n2行目".to_string(),
+                expected_revision: original.revision.clone(),
+                overwrite: None,
+            },
+            &path,
+        )
+        .unwrap();
+        let SaveResult::Saved { note } = result else {
+            panic!("同一内容の保存で競合が返されました");
+        };
+
+        assert_eq!(note.revision, original.revision);
+        assert_eq!(note.modified_at, original.modified_at);
+    }
+
+    #[test]
+    fn checks_for_conflicts_before_skipping_an_unchanged_write() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("note.txt");
+        atomic_write(&path, "題名\n本文").unwrap();
+        let current = document_from_path(&path).unwrap();
+
+        let result = save_note_at_path(
+            &SaveNoteInput {
+                id: "note.txt".to_string(),
+                title: current.title.clone(),
+                body: current.body.clone(),
+                expected_revision: "古いrevision".to_string(),
+                overwrite: None,
+            },
+            &path,
+        )
+        .unwrap();
+        let SaveResult::Conflict { current: conflict } = result else {
+            panic!("古いrevisionで保存済みが返されました");
+        };
+
+        assert_eq!(conflict.revision, current.revision);
+    }
+
+    #[test]
+    fn writes_when_content_changes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("note.txt");
+        atomic_write(&path, "題名\n変更前").unwrap();
+        let original = document_from_path(&path).unwrap();
+        thread::sleep(Duration::from_millis(10));
+
+        let result = save_note_at_path(
+            &SaveNoteInput {
+                id: "note.txt".to_string(),
+                title: original.title.clone(),
+                body: "変更後".to_string(),
+                expected_revision: original.revision.clone(),
+                overwrite: None,
+            },
+            &path,
+        )
+        .unwrap();
+        let SaveResult::Saved { note } = result else {
+            panic!("内容変更の保存で競合が返されました");
+        };
+
+        assert_ne!(note.revision, original.revision);
+        assert!(note.modified_at > original.modified_at);
+        assert_eq!(document_from_path(&path).unwrap().body, "変更後");
     }
 }
