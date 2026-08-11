@@ -23,7 +23,7 @@ function tagDecorations(view: EditorView): DecorationSet {
       tag.from,
       tag.to,
       Decoration.mark({
-        attributes: { "data-tag": tag.displayName, title: "⌘クリックで関連メモを表示" },
+        attributes: { "data-tag": tag.displayName, title: "クリックで関連メモを表示" },
         class: "cm-zettel-tag",
       }),
     );
@@ -114,9 +114,6 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenTag, ref
           }),
           EditorView.domEventHandlers({
             mousedown(event) {
-              if (!event.metaKey) {
-                return false;
-              }
               const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(".cm-zettel-tag") : null;
               const tag = target?.dataset.tag;
               if (!tag) {

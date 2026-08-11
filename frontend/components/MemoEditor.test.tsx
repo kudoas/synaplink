@@ -147,4 +147,17 @@ describe(MemoEditor, () => {
 
     expect(onNavigateBackward).not.toHaveBeenCalled();
   });
+
+  it("本文のタグを通常クリックすると関連メモの表示を通知する", () => {
+    const onOpenTag = vi.fn();
+    const { container } = render(
+      <MemoEditor value="本文の #りんご" onChange={vi.fn()} onNavigateBackward={vi.fn()} onOpenTag={onOpenTag} />,
+    );
+    const tag = container.querySelector<HTMLElement>(".cm-zettel-tag");
+    expect(tag).not.toBeNull();
+
+    fireEvent.mouseDown(tag!);
+
+    expect(onOpenTag).toHaveBeenCalledWith("りんご");
+  });
 });
