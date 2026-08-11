@@ -2,13 +2,13 @@
 
 ## Structure
 
-- `frontend/`: React、TypeScript、CodeMirrorで構成するUI
-- `backend/`: TauriとRustで構成するローカルファイル操作
-- `dist/`、`backend/target/`: 生成物のため編集・コミットしない
+- `frontend/`: UI built with React, TypeScript, and CodeMirror
+- `backend/`: Local file operations built with Tauri and Rust
+- `dist/` and `backend/target/`: Generated artifacts; do not edit or commit them
 
 ## Development
 
-ツールはmise、JavaScript依存関係はpnpmで管理します。依存バージョンは `package.json` で完全固定し、変更時は `pnpm-lock.yaml` も更新してください。
+Manage tools with mise and JavaScript dependencies with pnpm. Pin dependency versions exactly in `package.json`, and update `pnpm-lock.yaml` whenever they change.
 
 ```sh
 mise install
@@ -18,7 +18,7 @@ pnpm tauri dev
 
 ## Validation
 
-変更後は対象に応じて次を実行してください。
+After making changes, run the relevant commands below.
 
 ```sh
 pnpm lint
@@ -32,6 +32,6 @@ pnpm tauri build --bundles app
 
 ## Application Invariants
 
-- メモ形式は1行目がタイトル、2行目以降が本文のUTF-8プレーンテキストを維持する
-- 自動保存ではプログラムによるエディター同期とユーザー編集を区別する
-- 保存処理では外部変更との競合判定を、同一内容の書き込み省略より先に行う
+- Keep the note format as UTF-8 plain text with the title on the first line and the body on subsequent lines
+- During autosave, distinguish programmatic editor synchronization from user edits
+- During save operations, check for conflicts with external changes before skipping an identical write

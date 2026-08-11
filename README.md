@@ -1,31 +1,31 @@
 # Synaplink
 
-macOS向けの、ローカルファーストなツェッテルカステン・メモアプリです。メモは通常のUTF-8プレーンテキストとして保存され、本文中の `#タグ` で関連するメモを横断できます。
+A local-first Zettelkasten note-taking app for macOS. Notes are stored as ordinary UTF-8 plain text, and `#tags` in the body connect related notes.
 
-## 特徴
+## Features
 
-- 任意のローカルフォルダをメモの保存先に指定
-- 1メモ = 1つの `.txt` ファイル
-- 1行目をタイトル、2行目以降を本文として表示
-- `#りんご` のような日本語タグに対応
-- タグから関連メモを一覧表示
-- 自動保存と外部変更時の競合検知
-- 外部エディターで追加・編集した `.txt` も読み込み
+- Choose any local folder as the note vault
+- Store each note in a single `.txt` file
+- Display the first line as the title and subsequent lines as the body
+- Support Unicode tags such as `#café`
+- List related notes by tag
+- Autosave changes and detect conflicts with external edits
+- Load `.txt` files created or edited in external editors
 
-## タグ記法
+## Tag Syntax
 
-`#` の直後に日本語、英数字、ハイフン、アンダースコアを記述します。空白や句読点でタグが終了します。
+Tags begin with `#` followed by Unicode letters, numbers, hyphens, or underscores. Whitespace and punctuation end a tag.
 
 ```text
-りんごは #果物 のひとつ。
-品種については #青森_りんご にまとめる。
+Apples are a type of #fruit.
+Collect varieties under #green_apples.
 ```
 
-タグとして扱いたくない場合は `\#りんご` と書きます。タグ比較ではUnicodeのNFKC正規化と英字の小文字化を行います。
+Escape a hash as `\#apple` when it should not start a tag. Tag comparison uses Unicode NFKC normalization and lowercases letters.
 
-## 開発
+## Development
 
-必要なツールは [mise](https://mise.jdx.dev/) で導入できます。
+Install the required tools with [mise](https://mise.jdx.dev/).
 
 ```sh
 mise install
@@ -33,9 +33,9 @@ pnpm install
 pnpm tauri dev
 ```
 
-Web UIのみを起動する場合は `pnpm dev` を使います。ただし、ローカルファイル操作にはTauriランタイムが必要です。
+Use `pnpm dev` to start only the web UI. Local file operations require the Tauri runtime.
 
-## テストとビルド
+## Testing and Building
 
 ```sh
 pnpm lint
@@ -47,15 +47,15 @@ cargo test --manifest-path backend/Cargo.toml
 pnpm tauri build --bundles app
 ```
 
-TypeScriptはOxlintの全カテゴリと型情報付きチェックを使用します。相互に矛盾するルールや、React・Tauriの設計と両立しないルールのみ `.oxlintrc.json` で明示的に除外しています。Rustはrustfmtに加え、Clippyの `all`、`pedantic`、`nursery`、`cargo` と安全性に関するrestrictionルールをdenyで実行します。
+TypeScript uses every Oxlint category with type-aware checking. `.oxlintrc.json` explicitly excludes only conflicting rules and rules incompatible with the React or Tauri architecture. Rust uses rustfmt and denies Clippy's `all`, `pedantic`, `nursery`, `cargo`, and safety-related restriction rules.
 
-## データ形式
+## Data Format
 
-アプリが作成するファイル名はUUIDです。本文は独自メタデータを含まないプレーンテキストです。
+The app uses UUIDs for generated file names. Note contents are plain text with no proprietary metadata.
 
 ```text
-メモのタイトル
-ここから本文です。#りんご #果物
+Note title
+The body starts here. #apple #fruit
 ```
 
-保存先フォルダ以外のキャッシュや設定を削除しても、メモ本文からタグ情報を再構築できます。
+Even if caches or settings outside the vault are deleted, tag information can be rebuilt from the note contents.
