@@ -3,10 +3,9 @@ import { describe, expect, it } from "vitest";
 import { parseUrls } from "./url-parser";
 
 describe(parseUrls, () => {
-  it("httpとhttpsのURLを位置情報付きで抽出する", () => {
+  it("httpsのURLだけを位置情報付きで抽出する", () => {
     expect(parseUrls("参照 https://example.com/a?q=1#top と http://localhost:3000/x")).toStrictEqual([
       { from: 3, to: 32, url: "https://example.com/a?q=1#top" },
-      { from: 35, to: 58, url: "http://localhost:3000/x" },
     ]);
   });
 
@@ -41,7 +40,7 @@ describe(parseUrls, () => {
   });
 
   it("非対応スキーム、www表記、不完全なURLを無視する", () => {
-    expect(parseUrls("www.example.com mailto:memo@example.com ftp://example.com https:// http://")).toStrictEqual([]);
+    expect(parseUrls("http://example.com www.example.com mailto:memo@example.com ftp://example.com https://")).toStrictEqual([]);
   });
 
   it("別のトークンや非対応URLの途中にあるhttp表記を無視する", () => {

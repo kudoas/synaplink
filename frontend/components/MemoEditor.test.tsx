@@ -164,7 +164,7 @@ describe(MemoEditor, () => {
     expect(onOpenTag).toHaveBeenCalledWith("りんご");
   });
 
-  it("本文のhttpとhttpsのURLをリンクとして装飾する", () => {
+  it("本文のhttpsのURLだけをリンクとして装飾する", () => {
     const { container } = render(
       <MemoEditor
         value="http://example.com と https://example.com/path。"
@@ -175,7 +175,6 @@ describe(MemoEditor, () => {
     );
 
     expect([...container.querySelectorAll(".cm-zettel-link")].map((link) => link.textContent)).toStrictEqual([
-      "http://example.com",
       "https://example.com/path",
     ]);
   });

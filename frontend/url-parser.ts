@@ -13,7 +13,7 @@ const bracketPairs = [
   ["｛", "｝"],
 ] as const;
 const trailingPunctuation = /[.,!?;:、。！？；：〉》」』】〕〗〙〛]+$/u;
-const urlCandidate = /https?:\/\/[^\s<>"']+/giu;
+const urlCandidate = /https:\/\/[^\s<>"']+/giu;
 
 function trimTrailingCharacters(value: string): string {
   let trimmed = value;
@@ -57,14 +57,14 @@ export function parseUrls(content: string): UrlOccurrence[] {
 
     try {
       const parsed = new URL(candidate);
-      if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || !parsed.hostname) {
+      if (parsed.protocol !== "https:" || !parsed.hostname) {
         continue;
       }
     } catch {
       continue;
     }
 
-    const url = candidate.replace(/^https?/iu, (scheme) => scheme.toLowerCase());
+    const url = candidate.replace(/^https/iu, (scheme) => scheme.toLowerCase());
     urls.push({ from, to: from + candidate.length, url });
   }
 
