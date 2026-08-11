@@ -2,9 +2,12 @@ import { createRef } from "react";
 import { fireEvent, render } from "@testing-library/react";
 import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { describe, expect, it, vi } from "vitest";
 
 import { MemoEditor, type MemoEditorHandle } from "./MemoEditor";
+
+vi.mock(import("@tauri-apps/plugin-opener"), () => ({ openUrl: vi.fn() }));
 
 describe(MemoEditor, () => {
   it("外部から本文を同期しても変更を通知しない", () => {
@@ -159,5 +162,96 @@ describe(MemoEditor, () => {
     fireEvent.mouseDown(tag!);
 
     expect(onOpenTag).toHaveBeenCalledWith("りんご");
+  });
+
+  it("本文のhttpとhttpsのURLをリンクとして装飾する", () => {
+    const { container } = render(
+      <MemoEditor
+        value="http://example.com と https://example.com/path。"
+        onChange={vi.fn()}
+        onNavigateBackward={vi.fn()}
+        onOpenTag={vi.fn()}
+      />,
+    );
+
+    expect([...container.querySelectorAll(".cm-zettel-link")].map((link) => link.textContent)).toStrictEqual([
+      "http://example.com",
+      "https://example.com/path",
+    ]);
+  });
+
+  it("非対応スキームとwww表記をリンクとして装飾しない", () => {
+    const { container } = render(
+      <MemoEditor
+        value="www.example.com ftp://example.com mailto:memo@example.com"
+        onChange={vi.fn()}
+        onNavigateBackward={vi.fn()}
+        onOpenTag={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".cm-zettel-link")).toBeNull();
+  });
+
+  it("本文のURLを左クリックすると既定ブラウザで開く", () => {
+    vi.mocked(openUrl).mockReset().mockResolvedValue();
+    const onChange = vi.fn();
+    const onOpenTag = vi.fn();
+    const { container } = render(
+      <MemoEditor
+        value="https://example.com/path#section"
+        onChange={onChange}
+        onNavigateBackward={vi.fn()}
+        onOpenTag={onOpenTag}
+      />,
+    );
+    const fragment = container.querySelector<HTMLElement>(".cm-zettel-tag");
+    expect(fragment).not.toBeNull();
+
+    fireEvent.mouseDown(fragment!, { button: 0 });
+    expect(openUrl).not.toHaveBeenCalled();
+    fireEvent.click(fragment!, { button: 0 });
+
+    expect(openUrl).toHaveBeenCalledExactlyOnceWith("https://example.com/path#section");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onOpenTag).not.toHaveBeenCalled();
+  });
+
+  it.each([1, 2])("本文のURLをボタン%dで押しても既定ブラウザで開かない", (button) => {
+    vi.mocked(openUrl).mockReset().mockResolvedValue();
+    const { container } = render(
+      <MemoEditor
+        value="https://example.com"
+        onChange={vi.fn()}
+        onNavigateBackward={vi.fn()}
+        onOpenTag={vi.fn()}
+      />,
+    );
+    const link = container.querySelector<HTMLElement>(".cm-zettel-link");
+    expect(link).not.toBeNull();
+
+    fireEvent.mouseDown(link!, { button });
+    fireEvent.click(link!, { button });
+
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("urlを開けなくても未処理の拒否を残さない", async () => {
+    vi.mocked(openUrl).mockReset().mockRejectedValue(new Error("open failed"));
+    const { container } = render(
+      <MemoEditor
+        value="https://example.com"
+        onChange={vi.fn()}
+        onNavigateBackward={vi.fn()}
+        onOpenTag={vi.fn()}
+      />,
+    );
+    const link = container.querySelector<HTMLElement>(".cm-zettel-link");
+    expect(link).not.toBeNull();
+
+    fireEvent.click(link!, { button: 0 });
+    await Promise.resolve();
+
+    expect(container.querySelector(".cm-zettel-link")).toBeInTheDocument();
   });
 });

@@ -1,8 +1,10 @@
 import { basicSetup } from "codemirror";
-import { Annotation, EditorState, Prec, RangeSetBuilder } from "@codemirror/state";
+import { Annotation, EditorState, Prec } from "@codemirror/state";
 import { Decoration, EditorView, keymap, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import { parseTags } from "../tag-parser";
+import { parseUrls } from "../url-parser";
 
 interface Props {
   value: string;
@@ -16,30 +18,36 @@ export interface MemoEditorHandle {
   focusAtStart: () => void;
 }
 
-function tagDecorations(view: EditorView): DecorationSet {
-  const builder = new RangeSetBuilder<Decoration>();
-  for (const tag of parseTags(view.state.doc.toString())) {
-    builder.add(
-      tag.from,
-      tag.to,
-      Decoration.mark({
-        attributes: { "data-tag": tag.displayName, title: "クリックで関連メモを表示" },
-        class: "cm-zettel-tag",
-      }),
-    );
-  }
-  return builder.finish();
+function interactiveDecorations(view: EditorView): DecorationSet {
+  const content = view.state.doc.toString();
+  return Decoration.set(
+    [
+      ...parseTags(content).map((tag) =>
+        Decoration.mark({
+          attributes: { "data-tag": tag.displayName, title: "クリックで関連メモを表示" },
+          class: "cm-zettel-tag",
+        }).range(tag.from, tag.to),
+      ),
+      ...parseUrls(content).map((url) =>
+        Decoration.mark({
+          attributes: { "data-url": url.url, title: "クリックしてブラウザで開く" },
+          class: "cm-zettel-link",
+        }).range(url.from, url.to),
+      ),
+    ],
+    true,
+  );
 }
 
-const tagPlugin = ViewPlugin.fromClass(
+const interactivePlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
     constructor(view: EditorView) {
-      this.decorations = tagDecorations(view);
+      this.decorations = interactiveDecorations(view);
     }
     update(update: ViewUpdate) {
       if (update.docChanged || update.viewportChanged) {
-        this.decorations = tagDecorations(update.view);
+        this.decorations = interactiveDecorations(update.view);
       }
     }
   },
@@ -104,7 +112,7 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenTag, ref
         extensions: [
           navigateBackwardKeymap,
           basicSetup,
-          tagPlugin,
+          interactivePlugin,
           EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
             const isExternalValueSync = update.transactions.some((transaction) => transaction.annotation(externalValueSync));
@@ -113,9 +121,26 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenTag, ref
             }
           }),
           EditorView.domEventHandlers({
+            click(event) {
+              if (event.button !== 0) {
+                return false;
+              }
+              const target = event.target instanceof HTMLElement ? event.target : null;
+              const url = target?.closest<HTMLElement>(".cm-zettel-link")?.dataset.url;
+              if (!url) {
+                return false;
+              }
+              event.preventDefault();
+              void openUrl(url).catch(() => null);
+              return true;
+            },
             mousedown(event) {
-              const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(".cm-zettel-tag") : null;
-              const tag = target?.dataset.tag;
+              const target = event.target instanceof HTMLElement ? event.target : null;
+              if (target?.closest(".cm-zettel-link")) {
+                return false;
+              }
+
+              const tag = target?.closest<HTMLElement>(".cm-zettel-tag")?.dataset.tag;
               if (!tag) {
                 return false;
               }
@@ -130,6 +155,12 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenTag, ref
             ".cm-focused": { outline: "none" },
             ".cm-gutters": { display: "none" },
             ".cm-scroller": { fontFamily: "var(--font-body)", lineHeight: "1.8" },
+            ".cm-zettel-link": {
+              color: "var(--accent)",
+              cursor: "pointer",
+              textDecoration: "underline",
+              textUnderlineOffset: "3px",
+            },
             ".cm-zettel-tag": {
               backgroundColor: "var(--accent-soft)",
               borderRadius: "4px",
