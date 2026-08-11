@@ -398,7 +398,7 @@ pub fn run() {
             search_tag
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Zettel Memo");
+        .expect("error while running Synaplink");
 }
 
 #[cfg(test)]

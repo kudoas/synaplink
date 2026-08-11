@@ -1,3 +1,3 @@
 fn main() {
-    zettel_memo_lib::run();
+    synaplink_lib::run();
 }

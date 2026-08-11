@@ -221,7 +221,7 @@ export function App() {
         <header className="sidebar-header">
           <div className="brand">
             <span className="brand-mark small">Z</span>
-            <strong>Zettel Memo</strong>
+            <strong>Synaplink</strong>
           </div>
           <button className="icon-button" title="保存先を変更" onClick={() => void chooseVault()}>
             ⋯

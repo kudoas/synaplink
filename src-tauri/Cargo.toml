@@ -1,13 +1,13 @@
 [package]
-name = "zettel-memo"
+name = "synaplink"
 version = "0.1.0"
-description = "A local-first Zettelkasten memo app"
+description = "A local-first linked-note app"
 authors = ["kudoas"]
 edition = "2021"
 publish = false
 
 [lib]
-name = "zettel_memo_lib"
+name = "synaplink_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
