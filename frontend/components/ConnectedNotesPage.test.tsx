@@ -34,7 +34,7 @@ describe(ConnectedNotesPage, () => {
     expect(editor?.compareDocumentPosition(grid!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it("長いタグ本文を独立したスクロール領域に収める", () => {
+  it("長いタグ本文をページ全体のスクロールに含める", () => {
     render(
       <ConnectedNotesPage
         isNavigating={false}
@@ -51,7 +51,8 @@ describe(ConnectedNotesPage, () => {
     );
 
     const region = screen.getByRole("region", { name: "#りんご のメモ" });
-    expect(region).toHaveStyle({ height: "35vh", maxHeight: "320px", minHeight: "180px" });
+    expect(region).not.toHaveAttribute("style");
+    expect(region.parentElement).toHaveClass("results-view");
   });
 
   it("読み込み中は編集を開始できない", () => {

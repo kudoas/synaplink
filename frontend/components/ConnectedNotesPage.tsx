@@ -5,8 +5,6 @@ import { SaveStatus } from "./SaveStatus";
 
 export type TagMemoState = "error" | "loading" | "ready";
 
-const tagMemoEditorStyle = { height: "35vh", maxHeight: 320, minHeight: 180 } as const;
-
 interface Props {
   isNavigating: boolean;
   tag: string;
@@ -55,11 +53,7 @@ export function ConnectedNotesPage({
           )}
         </div>
       </header>
-      <section
-        className="tag-memo-editor"
-        aria-label={`#${tag} のメモ`}
-        style={tagMemoEditorStyle}
-      >
+      <section className="tag-memo-editor" aria-label={`#${tag} のメモ`}>
         {isNavigating ? (
           <p className="tag-memo-loading">移動先を読み込み中…</p>
         ) : memoState === "error" ? (
