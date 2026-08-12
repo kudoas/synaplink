@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { DocumentEditor } from "./components/DocumentEditor";
 import { EditConflictDialog } from "./components/EditConflictDialog";
@@ -15,14 +15,19 @@ export function App() {
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [tagResults, setTagResults] = useState<NoteSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const externalReadGeneration = useRef(0);
+
+  const loadNotes = useCallback(async () => {
+    setNotes(await api.listNotes());
+  }, []);
 
   const refreshNotes = useCallback(async () => {
     try {
-      setNotes(await api.listNotes());
+      await loadNotes();
     } catch (error) {
       setError(String(error));
     }
-  }, []);
+  }, [loadNotes]);
 
   const {
     acceptExternal,
@@ -44,7 +49,7 @@ export function App() {
     onError: (saveError) => {
       setError(String(saveError));
     },
-    onSaved: refreshNotes,
+    onSaved: loadNotes,
     persist: async (note, expectedRevision, overwrite) => {
       const result = await api.saveNote({
         body: note.body,
@@ -58,6 +63,18 @@ export function App() {
         : { current: result.current, status: "conflict" };
     },
   });
+
+  const invalidateExternalRead = useCallback(() => {
+    externalReadGeneration.current += 1;
+  }, []);
+
+  const loadDocument = useCallback(
+    (note: NoteDocument | null) => {
+      invalidateExternalRead();
+      load(note);
+    },
+    [invalidateExternalRead, load],
+  );
 
   useEffect(() => {
     void (async () => {
@@ -89,21 +106,24 @@ export function App() {
     }
     const latest = notes.find((note) => note.id === draft.id);
     if (latest && latest.revision !== draft.revision) {
-      const request = { canceled: false };
+      const generation = externalReadGeneration.current + 1;
+      externalReadGeneration.current = generation;
       void (async () => {
         try {
           const note = await api.readNote(draft.id);
-          if (!request.canceled) {
+          if (externalReadGeneration.current === generation && note.id === draft.id) {
             synchronize(note);
           }
         } catch (error) {
-          if (!request.canceled) {
+          if (externalReadGeneration.current === generation) {
             setError(String(error));
           }
         }
       })();
       return () => {
-        request.canceled = true;
+        if (externalReadGeneration.current === generation) {
+          externalReadGeneration.current += 1;
+        }
       };
     }
   }, [draft, notes, saveState, synchronize]);
@@ -126,22 +146,23 @@ export function App() {
 
   const navigateFromNote = useCallback(
     (action: () => void) => {
+      invalidateExternalRead();
       void requestNavigation(action);
     },
-    [requestNavigation],
+    [invalidateExternalRead, requestNavigation],
   );
 
-  const chooseVault = async () => {
-    const selected = await api.chooseVault();
-    if (!selected) {
-      return;
-    }
+  const chooseVault = () => {
     navigateFromNote(() => {
       void (async () => {
         try {
+          const selected = await api.chooseVault();
+          if (!selected) {
+            return;
+          }
           await api.setVault(selected);
           setVault(selected);
-          load(null);
+          loadDocument(null);
           setActiveTag(null);
           await refreshNotes();
         } catch (error) {
@@ -156,7 +177,7 @@ export function App() {
       void (async () => {
         try {
           const note = await api.readNote(id);
-          load(note);
+          loadDocument(note);
           setActiveTag(null);
         } catch (error) {
           setError(String(error));
@@ -170,7 +191,7 @@ export function App() {
       void (async () => {
         try {
           const note = await api.createNote();
-          load(note);
+          loadDocument(note);
           setActiveTag(null);
           await refreshNotes();
         } catch (error) {
@@ -194,17 +215,22 @@ export function App() {
     });
   };
 
-  const removeNote = async () => {
+  const removeNote = () => {
     if (!draft || !window.confirm(`「${draft.title || "無題"}」をゴミ箱へ移動しますか？`)) {
       return;
     }
-    try {
-      await api.deleteNote(draft.id);
-      load(null);
-      await refreshNotes();
-    } catch (error) {
-      setError(String(error));
-    }
+    const noteId = draft.id;
+    navigateFromNote(() => {
+      void (async () => {
+        try {
+          await api.deleteNote(noteId);
+          loadDocument(null);
+          await refreshNotes();
+        } catch (error) {
+          setError(String(error));
+        }
+      })();
+    });
   };
 
   if (!vault) {
@@ -215,7 +241,7 @@ export function App() {
           <span className="eyebrow">LOCAL-FIRST NOTES</span>
           <h1>考えを、つなげる。</h1>
           <p>プレーンテキストと #タグだけの、静かなツェッテルカステン。</p>
-          <button className="primary-button" onClick={() => void chooseVault()}>
+          <button className="primary-button" onClick={chooseVault}>
             メモの保存先を選ぶ
           </button>
           {error && <p className="error-message">{error}</p>}
@@ -232,7 +258,7 @@ export function App() {
             <span className="brand-mark small">Z</span>
             <strong>Synaplink</strong>
           </div>
-          <button className="icon-button" title="保存先を変更" onClick={() => void chooseVault()}>
+          <button className="icon-button" title="保存先を変更" onClick={chooseVault}>
             ⋯
           </button>
         </header>
@@ -283,7 +309,7 @@ export function App() {
         <main className="document-view">
           <header className="document-toolbar">
             <SaveStatus state={saveState} />
-            <button className="delete-button" onClick={() => void removeNote()}>
+            <button className="delete-button" onClick={removeNote}>
               ゴミ箱へ
             </button>
           </header>
