@@ -1,17 +1,17 @@
 node_modules/
 dist/
-backend/target/
+src-tauri/target/
 .worktrees/
 .superpowers/
 .DS_Store
 *.log
 
 # The project currently targets macOS. Keep only the source and macOS bundle icons.
-backend/icons/android/
-backend/icons/ios/
-backend/icons/StoreLogo.png
-backend/icons/Square*.png
-backend/icons/32x32.png
-backend/icons/64x64.png
-backend/icons/128x128*.png
-backend/icons/icon.ico
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/Square*.png
+src-tauri/icons/32x32.png
+src-tauri/icons/64x64.png
+src-tauri/icons/128x128*.png
+src-tauri/icons/icon.ico

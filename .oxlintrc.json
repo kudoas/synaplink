@@ -73,7 +73,7 @@
   },
   "overrides": [
     {
-      "files": ["frontend/**/*.test.ts", "frontend/**/*.test.tsx", "frontend/test/**/*.ts"],
+      "files": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**/*.ts"],
       "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "vitest", "node"],
       "env": {
         "browser": true,
@@ -92,7 +92,7 @@
       }
     },
     {
-      "files": ["frontend/vite-env.d.ts"],
+      "files": ["src/vite-env.d.ts"],
       "rules": {
         "import/unambiguous": "off",
         "unicorn/require-module-specifiers": "off"
@@ -111,7 +111,7 @@
       }
     }
   ],
-  "ignorePatterns": ["backend/**", "dist/**", "node_modules/**"],
+  "ignorePatterns": ["src-tauri/**", "dist/**", "node_modules/**"],
   "settings": {
     "react": {
       "version": "19"

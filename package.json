@@ -11,7 +11,7 @@
     "lint:fix": "oxlint --fix .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri": "cd backend && tauri"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@codemirror/commands": "6.10.4",
