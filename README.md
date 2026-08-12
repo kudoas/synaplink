@@ -9,6 +9,7 @@ A local-first Zettelkasten note-taking app for macOS. Notes are stored as ordina
 - Display the first line as the title and subsequent lines as the body
 - Support Unicode tags such as `#café`
 - List related notes by tag
+- Write dedicated notes on tag pages without mixing them into ordinary notes
 - Autosave changes and detect conflicts with external edits
 - Load `.txt` files created or edited in external editors
 

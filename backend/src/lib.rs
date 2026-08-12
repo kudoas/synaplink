@@ -64,6 +64,31 @@ pub struct SaveNoteInput {
     pub overwrite: Option<bool>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagMemoDocument {
+    pub tag: String,
+    pub body: String,
+    pub revision: Option<String>,
+    pub exists: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveTagMemoInput {
+    pub tag: String,
+    pub body: String,
+    pub expected_revision: Option<String>,
+    pub overwrite: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum SaveTagMemoResult {
+    Saved { memo: TagMemoDocument },
+    Conflict { current: TagMemoDocument },
+}
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum SaveResult {
@@ -73,6 +98,21 @@ pub enum SaveResult {
 
 fn normalize_tag(value: &str) -> String {
     value.nfkc().collect::<String>().to_lowercase()
+}
+
+fn display_tag(value: &str) -> Result<String, String> {
+    let tag = value.trim().trim_start_matches('#').to_string();
+    if normalize_tag(&tag).is_empty() {
+        return Err("タグが空です".to_string());
+    }
+    Ok(tag)
+}
+
+fn tag_memo_path(vault: &Path, tag: &str) -> Result<PathBuf, String> {
+    let display = display_tag(tag)?;
+    let normalized = normalize_tag(&display);
+    let name = format!("{:x}.txt", Sha256::digest(normalized.as_bytes()));
+    Ok(vault.join(".synaplink").join("tag-notes").join(name))
 }
 
 fn is_tag_character(character: char) -> bool {
@@ -351,10 +391,71 @@ fn save_note_at_path(input: &SaveNoteInput, path: &Path) -> Result<SaveResult, S
     })
 }
 
+fn tag_memo_from_path(tag: &str, path: &Path) -> Result<TagMemoDocument, String> {
+    let tag = display_tag(tag)?;
+    match fs::read_to_string(path) {
+        Ok(body) => Ok(TagMemoDocument {
+            tag,
+            revision: Some(revision(&body)),
+            body,
+            exists: true,
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(TagMemoDocument {
+            tag,
+            body: String::new(),
+            revision: None,
+            exists: false,
+        }),
+        Err(error) => Err(format!("タグメモを読み込めません: {error}")),
+    }
+}
+
+fn save_tag_memo_at_path(
+    input: &SaveTagMemoInput,
+    path: &Path,
+) -> Result<SaveTagMemoResult, String> {
+    let current = tag_memo_from_path(&input.tag, path)?;
+    if current.revision != input.expected_revision && input.overwrite != Some(true) {
+        return Ok(SaveTagMemoResult::Conflict { current });
+    }
+    let body = input.body.replace("\r\n", "\n");
+    if !current.exists && body.is_empty() {
+        return Ok(SaveTagMemoResult::Saved { memo: current });
+    }
+    let body_revision = revision(&body);
+    if current.revision.as_deref() == Some(body_revision.as_str()) {
+        return Ok(SaveTagMemoResult::Saved { memo: current });
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "保存先が不正です".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("タグメモの保存先を作成できません: {error}"))?;
+    atomic_write(path, &body)?;
+    Ok(SaveTagMemoResult::Saved {
+        memo: tag_memo_from_path(&input.tag, path)?,
+    })
+}
+
 #[tauri::command]
 fn save_note(input: SaveNoteInput, state: State<'_, AppState>) -> Result<SaveResult, String> {
     let path = resolve_note(&current_vault(&state)?, &input.id)?;
     save_note_at_path(&input, &path)
+}
+
+#[tauri::command]
+fn read_tag_memo(tag: String, state: State<'_, AppState>) -> Result<TagMemoDocument, String> {
+    let vault = current_vault(&state)?;
+    tag_memo_from_path(&tag, &tag_memo_path(&vault, &tag)?)
+}
+
+#[tauri::command]
+fn save_tag_memo(
+    input: SaveTagMemoInput,
+    state: State<'_, AppState>,
+) -> Result<SaveTagMemoResult, String> {
+    let vault = current_vault(&state)?;
+    save_tag_memo_at_path(&input, &tag_memo_path(&vault, &input.tag)?)
 }
 
 #[tauri::command]
@@ -403,6 +504,8 @@ pub fn run() {
             read_note,
             create_note,
             save_note,
+            read_tag_memo,
+            save_tag_memo,
             delete_note,
             search_tag
         ])
@@ -527,5 +630,149 @@ mod tests {
         assert_ne!(note.revision, original.revision);
         assert!(note.modified_at > original.modified_at);
         assert_eq!(document_from_path(&path).unwrap().body, "変更後");
+    }
+
+    #[test]
+    fn tag_memo_path_reuses_existing_tag_normalization() {
+        let vault = Path::new("/vault");
+        assert_eq!(
+            tag_memo_path(vault, "#ＡＰＰＬＥ").unwrap(),
+            tag_memo_path(vault, "apple").unwrap()
+        );
+        assert!(tag_memo_path(vault, "#").is_err());
+    }
+
+    #[test]
+    fn blank_missing_tag_memo_does_not_create_storage() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = tag_memo_path(directory.path(), "りんご").unwrap();
+        let result = save_tag_memo_at_path(
+            &SaveTagMemoInput {
+                tag: "りんご".to_string(),
+                body: String::new(),
+                expected_revision: None,
+                overwrite: None,
+            },
+            &path,
+        )
+        .unwrap();
+        let SaveTagMemoResult::Saved { memo } = result else {
+            panic!("blank missing memo must be treated as saved");
+        };
+        assert!(!memo.exists);
+        assert!(!directory.path().join(".synaplink").exists());
+    }
+
+    #[test]
+    fn creates_then_retains_an_empty_tag_memo_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = tag_memo_path(directory.path(), "りんご").unwrap();
+        let created = save_tag_memo_at_path(
+            &SaveTagMemoInput {
+                tag: "りんご".to_string(),
+                body: "赤い果物".to_string(),
+                expected_revision: None,
+                overwrite: None,
+            },
+            &path,
+        )
+        .unwrap();
+        let SaveTagMemoResult::Saved { memo: created } = created else {
+            panic!("first write must save");
+        };
+        let cleared = save_tag_memo_at_path(
+            &SaveTagMemoInput {
+                tag: "りんご".to_string(),
+                body: String::new(),
+                expected_revision: created.revision,
+                overwrite: None,
+            },
+            &path,
+        )
+        .unwrap();
+        let SaveTagMemoResult::Saved { memo: cleared } = cleared else {
+            panic!("clearing must save");
+        };
+        assert!(cleared.exists);
+        assert_eq!(fs::read_to_string(path).unwrap(), "");
+    }
+
+    #[test]
+    fn tag_memo_checks_conflict_before_identical_write() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = tag_memo_path(directory.path(), "りんご").unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        atomic_write(&path, "外部の本文").unwrap();
+        let result = save_tag_memo_at_path(
+            &SaveTagMemoInput {
+                tag: "りんご".to_string(),
+                body: "外部の本文".to_string(),
+                expected_revision: Some("stale".to_string()),
+                overwrite: None,
+            },
+            &path,
+        )
+        .unwrap();
+        assert!(matches!(result, SaveTagMemoResult::Conflict { .. }));
+    }
+
+    #[test]
+    fn tag_memo_detects_first_create_and_external_delete_races() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = tag_memo_path(directory.path(), "りんご").unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        atomic_write(&path, "external").unwrap();
+        let first_create = save_tag_memo_at_path(
+            &SaveTagMemoInput {
+                tag: "りんご".to_string(),
+                body: "local".to_string(),
+                expected_revision: None,
+                overwrite: None,
+            },
+            &path,
+        )
+        .unwrap();
+        assert!(matches!(first_create, SaveTagMemoResult::Conflict { .. }));
+
+        let expected = Some(revision("external"));
+        fs::remove_file(&path).unwrap();
+        let external_delete = save_tag_memo_at_path(
+            &SaveTagMemoInput {
+                tag: "りんご".to_string(),
+                body: "local".to_string(),
+                expected_revision: expected,
+                overwrite: None,
+            },
+            &path,
+        )
+        .unwrap();
+        let SaveTagMemoResult::Conflict { current } = external_delete else {
+            panic!("external deletion must conflict");
+        };
+        assert!(!current.exists);
+        assert_eq!(current.revision, None);
+    }
+
+    #[test]
+    fn tag_memo_reports_invalid_utf8() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = tag_memo_path(directory.path(), "りんご").unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, [0xff, 0xfe]).unwrap();
+        assert!(tag_memo_from_path("りんご", &path)
+            .unwrap_err()
+            .contains("タグメモを読み込めません"));
+    }
+
+    #[test]
+    fn scan_notes_excludes_tag_memo_files() {
+        let directory = tempfile::tempdir().unwrap();
+        atomic_write(&directory.path().join("ordinary.txt"), "普通\n本文").unwrap();
+        let tag_path = directory.path().join(".synaplink/tag-notes/tag.txt");
+        fs::create_dir_all(tag_path.parent().unwrap()).unwrap();
+        atomic_write(&tag_path, "タグ本文").unwrap();
+        let notes = scan_notes(directory.path()).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].id, "ordinary.txt");
     }
 }

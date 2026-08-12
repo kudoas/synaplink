@@ -9,6 +9,7 @@ export default defineConfig({
     strictPort: true,
   },
   test: {
+    css: { include: [/styles\.css/u] },
     environment: "jsdom",
     setupFiles: "./frontend/test/setup.ts",
   },

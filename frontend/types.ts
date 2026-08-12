@@ -30,3 +30,21 @@ export interface SaveNoteInput {
 }
 
 export type SaveResult = { status: "saved"; note: NoteDocument } | { status: "conflict"; current: NoteDocument };
+
+export interface TagMemoDocument {
+  tag: string;
+  body: string;
+  revision: string | null;
+  exists: boolean;
+}
+
+export interface SaveTagMemoInput {
+  tag: string;
+  body: string;
+  expectedRevision: string | null;
+  overwrite?: boolean;
+}
+
+export type SaveTagMemoResult =
+  | { status: "saved"; memo: TagMemoDocument }
+  | { status: "conflict"; current: TagMemoDocument };

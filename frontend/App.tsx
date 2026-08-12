@@ -1,30 +1,120 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
+import { ConnectedNotesPage, type TagMemoState } from "./components/ConnectedNotesPage";
 import { DocumentEditor } from "./components/DocumentEditor";
-import { TagResults } from "./components/TagResults";
+import { EditConflictDialog } from "./components/EditConflictDialog";
+import { SaveStatus } from "./components/SaveStatus";
 import { uniqueTags } from "./tag-parser";
-import type { NoteDocument, NoteSummary } from "./types";
-
-type SaveState = "saved" | "dirty" | "saving" | "error";
+import type { NoteDocument, NoteSummary, TagMemoDocument } from "./types";
+import {
+  type AbortedNavigation,
+  type NavigationResult,
+  useAutosavedDocument,
+} from "./use-autosaved-document";
 
 export function App() {
   const [vault, setVault] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteSummary[]>([]);
-  const [draft, setDraft] = useState<NoteDocument | null>(null);
   const [search, setSearch] = useState("");
-  const [saveState, setSaveState] = useState<SaveState>("saved");
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [tagMemoState, setTagMemoState] = useState<TagMemoState>("loading");
   const [tagResults, setTagResults] = useState<NoteSummary[]>([]);
-  const [conflict, setConflict] = useState<NoteDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const externalReadGeneration = useRef(0);
+  const editorNavigationGeneration = useRef(0);
+  const tagMemoReadGeneration = useRef(0);
+  const tagRequest = useRef(0);
+
+  const loadNotes = useCallback(async () => {
+    setNotes(await api.listNotes());
+  }, []);
 
   const refreshNotes = useCallback(async () => {
     try {
-      setNotes(await api.listNotes());
+      await loadNotes();
     } catch (error) {
       setError(String(error));
     }
+  }, [loadNotes]);
+
+  const noteAutosave = useAutosavedDocument<NoteDocument>({
+    mergeSaved: (local, saved) => ({
+      ...local,
+      modifiedAt: saved.modifiedAt,
+      revision: saved.revision,
+      tags: saved.tags,
+    }),
+    onError: (saveError) => {
+      setError(String(saveError));
+    },
+    onSaved: loadNotes,
+    persist: async (note, expectedRevision, overwrite) => {
+      const result = await api.saveNote({
+        body: note.body,
+        expectedRevision: expectedRevision ?? note.revision,
+        id: note.id,
+        ...(overwrite ? { overwrite: true } : {}),
+        title: note.title,
+      });
+      return result.status === "saved"
+        ? { document: result.note, status: "saved" }
+        : { current: result.current, status: "conflict" };
+    },
+  });
+
+  const {
+    acceptExternal,
+    conflict,
+    document: draft,
+    edit,
+    isNavigating: isNoteNavigating,
+    load,
+    overwriteConflict,
+    requestNavigation,
+    saveState,
+    synchronize,
+  } = noteAutosave;
+
+  const {
+    acceptExternal: acceptExternalTagMemo,
+    conflict: tagMemoConflict,
+    document: tagMemo,
+    edit: editTagMemo,
+    isNavigating: isTagMemoNavigating,
+    load: loadTagMemo,
+    overwriteConflict: overwriteTagMemoConflict,
+    requestNavigation: requestTagMemoNavigation,
+    saveState: tagMemoSaveState,
+    synchronize: synchronizeTagMemo,
+  } = useAutosavedDocument<TagMemoDocument>({
+    mergeSaved: (local, saved) => ({ ...local, exists: saved.exists, revision: saved.revision }),
+    onError: (saveError) => {
+      setError(String(saveError));
+    },
+    persist: async (memo, expectedRevision, overwrite) => {
+      const result = await api.saveTagMemo({
+        body: memo.body,
+        expectedRevision,
+        tag: memo.tag,
+        ...(overwrite ? { overwrite: true } : {}),
+      });
+      return result.status === "saved"
+        ? { document: result.memo, status: "saved" }
+        : { current: result.current, status: "conflict" };
+    },
+  });
+
+  const invalidateExternalRead = useCallback(() => {
+    externalReadGeneration.current += 1;
   }, []);
+
+  const loadDocument = useCallback(
+    (note: NoteDocument | null) => {
+      invalidateExternalRead();
+      load(note);
+    },
+    [invalidateExternalRead, load],
+  );
 
   useEffect(() => {
     void (async () => {
@@ -56,45 +146,54 @@ export function App() {
     }
     const latest = notes.find((note) => note.id === draft.id);
     if (latest && latest.revision !== draft.revision) {
-      void api
-        .readNote(draft.id)
-        .then(setDraft)
-        .catch((error) => {
-          setError(String(error));
-        });
+      const generation = externalReadGeneration.current + 1;
+      externalReadGeneration.current = generation;
+      void (async () => {
+        try {
+          const note = await api.readNote(draft.id);
+          if (externalReadGeneration.current === generation && note.id === draft.id) {
+            synchronize(note);
+          }
+        } catch (error) {
+          if (externalReadGeneration.current === generation) {
+            setError(String(error));
+          }
+        }
+      })();
+      return () => {
+        if (externalReadGeneration.current === generation) {
+          externalReadGeneration.current += 1;
+        }
+      };
     }
-  }, [draft, notes, saveState]);
+  }, [draft, notes, saveState, synchronize]);
 
   useEffect(() => {
-    if (!draft || saveState !== "dirty" || conflict) {
+    if (!activeTag || isTagMemoNavigating || tagMemoSaveState !== "saved" || tagMemoState !== "ready") {
       return;
     }
-    const timeout = window.setTimeout(async () => {
-      setSaveState("saving");
-      try {
-        const result = await api.saveNote({
-          body: draft.body,
-          expectedRevision: draft.revision,
-          id: draft.id,
-          title: draft.title,
-        });
-        if (result.status === "conflict") {
-          setConflict(result.current);
-          setSaveState("dirty");
-          return;
+    const interval = window.setInterval(() => {
+      const request = tagRequest.current;
+      const memoRead = tagMemoReadGeneration.current + 1;
+      tagMemoReadGeneration.current = memoRead;
+      void (async () => {
+        try {
+          const memo = await api.readTagMemo(activeTag);
+          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
+            synchronizeTagMemo(memo);
+          }
+        } catch (error) {
+          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
+            setTagMemoState("error");
+            setError(String(error));
+          }
         }
-        setDraft(result.note);
-        setSaveState("saved");
-        await refreshNotes();
-      } catch (error) {
-        setSaveState("error");
-        setError(String(error));
-      }
-    }, 700);
+      })();
+    }, 2500);
     return () => {
-      window.clearTimeout(timeout);
+      window.clearInterval(interval);
     };
-  }, [conflict, draft, refreshNotes, saveState]);
+  }, [activeTag, isTagMemoNavigating, synchronizeTagMemo, tagMemoSaveState, tagMemoState]);
 
   const visibleNotes = useMemo(() => {
     const query = search.trim().normalize("NFKC").toLocaleLowerCase();
@@ -112,90 +211,165 @@ export function App() {
 
   const tags = useMemo(() => uniqueTags(draft?.body ?? ""), [draft?.body]);
 
-  const chooseVault = async () => {
-    const selected = await api.chooseVault();
-    if (!selected) {
-      return;
-    }
-    try {
-      await api.setVault(selected);
-      setVault(selected);
-      setDraft(null);
-      setActiveTag(null);
-      await refreshNotes();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
+  const requestEditorNavigation = useCallback(
+    (action: (isCurrent: () => boolean) => NavigationResult | Promise<NavigationResult>) => {
+      const generation = editorNavigationGeneration.current + 1;
+      editorNavigationGeneration.current = generation;
+      invalidateExternalRead();
+      const navigate = activeTag ? requestTagMemoNavigation : requestNavigation;
+      void navigate(
+        (): NavigationResult | Promise<NavigationResult> =>
+          action(() => editorNavigationGeneration.current === generation),
+      );
+    },
+    [activeTag, invalidateExternalRead, requestNavigation, requestTagMemoNavigation],
+  );
 
-  const openNote = async (id: string) => {
-    if (saveState === "dirty" || saveState === "saving") {
-      return;
-    }
-    try {
-      setDraft(await api.readNote(id));
-      setActiveTag(null);
-      setSaveState("saved");
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-
-  const createNote = async () => {
-    try {
-      const note = await api.createNote();
-      setDraft(note);
-      setActiveTag(null);
-      setSaveState("saved");
-      await refreshNotes();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-
-  const openTag = async (tag: string) => {
-    try {
-      setTagResults(await api.searchTag(tag));
+  const loadTagPage = useCallback(
+    (tag: string) => {
+      const request = tagRequest.current + 1;
+      const memoRead = tagMemoReadGeneration.current + 1;
+      tagRequest.current = request;
+      tagMemoReadGeneration.current = memoRead;
       setActiveTag(tag);
-    } catch (error) {
-      setError(String(error));
-    }
+      setTagMemoState("loading");
+      setTagResults([]);
+      loadTagMemo(null);
+      void (async () => {
+        try {
+          const results = await api.searchTag(tag);
+          if (tagRequest.current === request) {
+            setTagResults(results);
+          }
+        } catch (error) {
+          if (tagRequest.current === request) {
+            setError(String(error));
+          }
+        }
+      })();
+      void (async () => {
+        try {
+          const memo = await api.readTagMemo(tag);
+          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
+            loadTagMemo(memo);
+            setTagMemoState("ready");
+          }
+        } catch (error) {
+          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
+            setTagMemoState("error");
+            setError(String(error));
+          }
+        }
+      })();
+    },
+    [loadTagMemo],
+  );
+
+  const closeTagPage = useCallback(() => {
+    tagRequest.current += 1;
+    tagMemoReadGeneration.current += 1;
+    setActiveTag(null);
+    setTagMemoState("loading");
+    setTagResults([]);
+    loadTagMemo(null);
+  }, [loadTagMemo]);
+
+  const chooseVault = () => {
+    requestEditorNavigation(async (isCurrent) => {
+      if (activeTag) {
+        tagRequest.current += 1;
+        tagMemoReadGeneration.current += 1;
+      }
+      const restoreVault = async (): Promise<AbortedNavigation | void> => {
+        if (!vault) {
+          return;
+        }
+        try {
+          await api.setVault(vault);
+        } catch (rollbackError) {
+          return { error: rollbackError, status: "abort" };
+        }
+      };
+      const selected = await api.chooseVault();
+      if (!selected || !isCurrent()) {
+        return;
+      }
+      await api.setVault(selected);
+      if (!isCurrent()) {
+        return restoreVault();
+      }
+      const selectedNotes = await api.listNotes().catch(async (error: unknown) => {
+        const abort = await restoreVault();
+        if (abort) {
+          return abort;
+        }
+        throw error;
+      });
+      if (!Array.isArray(selectedNotes)) {
+        return selectedNotes;
+      }
+      if (!isCurrent()) {
+        return restoreVault();
+      }
+      setVault(selected);
+      setNotes(selectedNotes);
+      loadDocument(null);
+      closeTagPage();
+    });
   };
 
-  const removeNote = async () => {
+  const openNote = (id: string) => {
+    requestEditorNavigation(async (isCurrent) => {
+      const note = await api.readNote(id);
+      if (!isCurrent()) {
+        return;
+      }
+      loadDocument(note);
+      closeTagPage();
+    });
+  };
+
+  const createNote = () => {
+    requestEditorNavigation(async (isCurrent) => {
+      const note = await api.createNote();
+      if (!isCurrent()) {
+        return;
+      }
+      const latestNotes = await api.listNotes();
+      if (!isCurrent()) {
+        return;
+      }
+      setNotes(latestNotes);
+      loadDocument(note);
+      closeTagPage();
+    });
+  };
+
+  const openTag = (tag: string) => {
+    requestEditorNavigation((isCurrent) => {
+      if (isCurrent()) {
+        loadTagPage(tag);
+      }
+    });
+  };
+
+  const removeNote = () => {
     if (!draft || !window.confirm(`「${draft.title || "無題"}」をゴミ箱へ移動しますか？`)) {
       return;
     }
-    try {
-      await api.deleteNote(draft.id);
-      setDraft(null);
-      await refreshNotes();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-
-  const overwriteConflict = async () => {
-    if (!draft) {
-      return;
-    }
-    try {
-      const result = await api.saveNote({
-        body: draft.body,
-        expectedRevision: conflict?.revision ?? draft.revision,
-        id: draft.id,
-        overwrite: true,
-        title: draft.title,
-      });
-      if (result.status === "saved") {
-        setDraft(result.note);
-        setConflict(null);
-        setSaveState("saved");
-        await refreshNotes();
+    const noteId = draft.id;
+    requestEditorNavigation(async (isCurrent) => {
+      await api.deleteNote(noteId);
+      if (!isCurrent()) {
+        return;
       }
-    } catch (error) {
-      setError(String(error));
-    }
+      const latestNotes = await api.listNotes();
+      if (!isCurrent()) {
+        return;
+      }
+      loadDocument(null);
+      setNotes(latestNotes);
+    });
   };
 
   if (!vault) {
@@ -206,7 +380,7 @@ export function App() {
           <span className="eyebrow">LOCAL-FIRST NOTES</span>
           <h1>考えを、つなげる。</h1>
           <p>プレーンテキストと #タグだけの、静かなツェッテルカステン。</p>
-          <button className="primary-button" onClick={() => void chooseVault()}>
+          <button className="primary-button" onClick={chooseVault}>
             メモの保存先を選ぶ
           </button>
           {error && <p className="error-message">{error}</p>}
@@ -223,7 +397,7 @@ export function App() {
             <span className="brand-mark small">Z</span>
             <strong>Synaplink</strong>
           </div>
-          <button className="icon-button" title="保存先を変更" onClick={() => void chooseVault()}>
+          <button className="icon-button" title="保存先を変更" onClick={chooseVault}>
             ⋯
           </button>
         </header>
@@ -237,12 +411,18 @@ export function App() {
             placeholder="メモを検索"
           />
         </div>
-        <button className="new-note-button" onClick={() => void createNote()}>
+        <button className="new-note-button" onClick={createNote}>
           <span>＋</span> 新しいメモ
         </button>
         <div className="note-list">
           {visibleNotes.map((note) => (
-            <button className={`note-row ${draft?.id === note.id ? "active" : ""}`} key={note.id} onClick={() => void openNote(note.id)}>
+            <button
+              className={`note-row ${draft?.id === note.id ? "active" : ""}`}
+              key={note.id}
+              onClick={() => {
+                openNote(note.id);
+              }}
+            >
               <strong>{note.title.trim() || "無題"}</strong>
               <p>{note.preview || "本文はまだありません。"}</p>
               <time>{new Date(note.modifiedAt).toLocaleDateString("ja-JP", { day: "numeric", month: "short" })}</time>
@@ -256,37 +436,49 @@ export function App() {
       </aside>
 
       {activeTag ? (
-        <TagResults
+        <ConnectedNotesPage
+          isNavigating={isTagMemoNavigating}
+          memo={tagMemo}
+          memoState={tagMemoState}
           tag={activeTag}
           notes={tagResults}
+          saveState={tagMemoSaveState}
           onBack={() => {
-            setActiveTag(null);
+            requestEditorNavigation((isCurrent) => {
+              if (isCurrent()) {
+                closeTagPage();
+              }
+            });
           }}
-          onSelect={(id) => void openNote(id)}
+          onBodyChange={(body) => {
+            editTagMemo((current) => ({ ...current, body }));
+          }}
+          onOpenTag={openTag}
+          onSelect={openNote}
         />
       ) : draft ? (
         <main className="document-view">
           <header className="document-toolbar">
-            <span className={`save-status ${saveState}`}>
-              {saveState === "saved" ? "保存済み" : saveState === "saving" ? "保存中…" : saveState === "error" ? "保存エラー" : "未保存"}
-            </span>
-            <button className="delete-button" onClick={() => void removeNote()}>
+            <SaveStatus state={saveState} />
+            <button className="delete-button" disabled={isNoteNavigating} onClick={removeNote}>
               ゴミ箱へ
             </button>
           </header>
-          <DocumentEditor
-            body={draft.body}
-            onBodyChange={(body) => {
-              setDraft((current) => (current ? { ...current, body } : current));
-              setSaveState("dirty");
-            }}
-            onOpenTag={(tag) => void openTag(tag)}
-            onTitleChange={(title) => {
-              setDraft({ ...draft, title });
-              setSaveState("dirty");
-            }}
-            title={draft.title}
-          />
+          {isNoteNavigating ? (
+            <p className="document-transition">移動先を読み込み中…</p>
+          ) : (
+            <DocumentEditor
+              body={draft.body}
+              onBodyChange={(body) => {
+                edit((current) => ({ ...current, body }));
+              }}
+              onOpenTag={openTag}
+              onTitleChange={(title) => {
+                edit((current) => ({ ...current, title }));
+              }}
+              title={draft.title}
+            />
+          )}
         </main>
       ) : (
         <main className="empty-view">
@@ -303,7 +495,12 @@ export function App() {
         <h2>このメモのタグ</h2>
         <div className="tag-list">
           {tags.map((tag) => (
-            <button key={tag.normalizedName} onClick={() => void openTag(tag.displayName)}>
+            <button
+              key={tag.normalizedName}
+              onClick={() => {
+                openTag(tag.displayName);
+              }}
+            >
               #{tag.displayName}
               <span>→</span>
             </button>
@@ -318,28 +515,13 @@ export function App() {
         </div>
       </aside>
 
-      {conflict && (
-        <div className="modal-backdrop">
-          <section className="modal" role="dialog" aria-modal="true">
-            <span className="eyebrow">EDIT CONFLICT</span>
-            <h2>外部でメモが変更されました</h2>
-            <p>現在の編集を残すか、外部で変更された内容を読み込んでください。</p>
-            <div className="modal-actions">
-              <button
-                onClick={() => {
-                  setDraft(conflict);
-                  setConflict(null);
-                  setSaveState("saved");
-                }}
-              >
-                外部の内容を読む
-              </button>
-              <button className="primary-button" onClick={() => void overwriteConflict()}>
-                現在の編集で上書き
-              </button>
-            </div>
-          </section>
-        </div>
+      {(activeTag ? tagMemoConflict : conflict) && (
+        <EditConflictDialog
+          onAcceptExternal={activeTag ? acceptExternalTagMemo : acceptExternal}
+          onOverwrite={() => {
+            void (activeTag ? overwriteTagMemoConflict() : overwriteConflict());
+          }}
+        />
       )}
 
       {error && (
