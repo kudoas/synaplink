@@ -19,6 +19,7 @@ interface Options<T extends VersionedDocument> {
 }
 
 type PersistRequest = { overwrite: false } | { expectedRevision: string | null; overwrite: true };
+type SaveCurrency<T> = { status: "current" } | { document: T; status: "retry" } | { status: "stop" };
 
 export interface AutosavedDocumentController<T extends VersionedDocument> {
   document: T | null;
@@ -47,8 +48,10 @@ export function useAutosavedDocument<T extends VersionedDocument>({
   const saveStateRef = useRef<SaveState>("saved");
   const conflictRef = useRef<T | null>(null);
   const editGenerationRef = useRef(0);
+  const loadGenerationRef = useRef(0);
   const pendingNavigationRef = useRef<(() => void) | null>(null);
   const inFlightRef = useRef<Promise<void> | null>(null);
+  const mountedRef = useRef(true);
 
   const persistRef = useRef(persist);
   const mergeSavedRef = useRef(mergeSaved);
@@ -61,6 +64,15 @@ export function useAutosavedDocument<T extends VersionedDocument>({
     onErrorRef.current = onError;
     onSavedRef.current = onSaved;
   }, [mergeSaved, onError, onSaved, persist]);
+
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      loadGenerationRef.current += 1;
+      pendingNavigationRef.current = null;
+    };
+  }, []);
 
   const updateDocument = useCallback((next: T | null) => {
     documentRef.current = next;
@@ -77,6 +89,20 @@ export function useAutosavedDocument<T extends VersionedDocument>({
     setConflict(next);
   }, []);
 
+  const classifySave = useCallback((loadGeneration: number): SaveCurrency<T> => {
+    if (!mountedRef.current) {
+      return { status: "stop" };
+    }
+    if (loadGenerationRef.current === loadGeneration) {
+      return { status: "current" };
+    }
+    const latestDocument = documentRef.current;
+    if (saveStateRef.current === "dirty" && latestDocument) {
+      return { document: latestDocument, status: "retry" };
+    }
+    return { status: "stop" };
+  }, []);
+
   const persistCurrent = useCallback(
     async (request?: PersistRequest): Promise<void> => {
       if (inFlightRef.current) {
@@ -89,6 +115,7 @@ export function useAutosavedDocument<T extends VersionedDocument>({
 
         while (documentToSave) {
           const generationAtStart = editGenerationRef.current;
+          const loadGenerationAtStart = loadGenerationRef.current;
           updateSaveState("saving");
 
           try {
@@ -96,6 +123,15 @@ export function useAutosavedDocument<T extends VersionedDocument>({
               "expectedRevision" in currentRequest ? currentRequest.expectedRevision : documentToSave.revision;
             // oxlint-disable-next-line eslint/no-await-in-loop -- Navigation requires serial saves with the new revision.
             const result = await persistRef.current(documentToSave, expectedRevision, currentRequest.overwrite);
+            const persistenceCurrency = classifySave(loadGenerationAtStart);
+            if (persistenceCurrency.status === "stop") {
+              return;
+            }
+            if (persistenceCurrency.status === "retry") {
+              currentRequest = { overwrite: false };
+              documentToSave = persistenceCurrency.document;
+              continue;
+            }
             if (result.status === "conflict") {
               pendingNavigationRef.current = null;
               updateConflict(result.current);
@@ -119,6 +155,15 @@ export function useAutosavedDocument<T extends VersionedDocument>({
 
             // oxlint-disable-next-line eslint/no-await-in-loop -- The save callback must finish before navigation.
             await onSavedRef.current?.(result.document);
+            const callbackCurrency = classifySave(loadGenerationAtStart);
+            if (callbackCurrency.status === "stop") {
+              return;
+            }
+            if (callbackCurrency.status === "retry") {
+              currentRequest = { overwrite: false };
+              documentToSave = callbackCurrency.document;
+              continue;
+            }
             if (editGenerationRef.current === generationAtStart) {
               updateSaveState("saved");
               const navigate = pendingNavigationRef.current;
@@ -134,6 +179,15 @@ export function useAutosavedDocument<T extends VersionedDocument>({
               return;
             }
           } catch (error) {
+            const errorCurrency = classifySave(loadGenerationAtStart);
+            if (errorCurrency.status === "stop") {
+              return;
+            }
+            if (errorCurrency.status === "retry") {
+              currentRequest = { overwrite: false };
+              documentToSave = errorCurrency.document;
+              continue;
+            }
             pendingNavigationRef.current = null;
             updateSaveState("error");
             onErrorRef.current(error);
@@ -152,7 +206,7 @@ export function useAutosavedDocument<T extends VersionedDocument>({
         }
       }
     },
-    [updateConflict, updateDocument, updateSaveState],
+    [classifySave, updateConflict, updateDocument, updateSaveState],
   );
 
   useEffect(() => {
@@ -167,6 +221,7 @@ export function useAutosavedDocument<T extends VersionedDocument>({
 
   const load = useCallback(
     (next: T | null) => {
+      loadGenerationRef.current += 1;
       pendingNavigationRef.current = null;
       updateConflict(null);
       updateDocument(next);

@@ -8,6 +8,20 @@ interface TestDocument {
   exists: boolean;
 }
 
+interface Deferred<Value> {
+  promise: Promise<Value>;
+  resolve: (value: Value) => void;
+}
+
+function deferred<Value>(): Deferred<Value> {
+  let resolveDeferred: (value: Value) => void = vi.fn();
+  // oxlint-disable-next-line promise/avoid-new -- Tests need explicit control over in-flight persistence.
+  const promise = new Promise<Value>((resolve) => {
+    resolveDeferred = resolve;
+  });
+  return { promise, resolve: resolveDeferred };
+}
+
 describe(useAutosavedDocument, () => {
   // oxlint-disable-next-line vitest/no-hooks -- Fake timers are reset after every contract case.
   beforeEach(() => vi.useFakeTimers());
@@ -74,7 +88,68 @@ describe(useAutosavedDocument, () => {
     });
     await act(async () => result.current.requestNavigation(navigate));
     expect(result.current.conflict).toStrictEqual(external);
+    expect(result.current.document).toStrictEqual({ body: "local edit", exists: true, revision: "r1" });
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("ignores an in-flight save result after loading another document", async () => {
+    const firstSave = deferred<{ document: TestDocument; status: "saved" }>();
+    const onSaved = vi.fn();
+    const persist = vi.fn().mockReturnValue(firstSave.promise);
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({ mergeSaved: (_local, saved) => saved, onError: vi.fn(), onSaved, persist }),
+    );
+    act(() => {
+      result.current.load({ body: "document A", exists: true, revision: "a1" });
+      result.current.edit((current) => ({ ...current, body: "edited A" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    act(() => {
+      result.current.load({ body: "document B", exists: true, revision: "b1" });
+    });
+    await act(async () => {
+      firstSave.resolve({ document: { body: "edited A", exists: true, revision: "a2" }, status: "saved" });
+      await firstSave.promise;
+    });
+    expect(result.current.document).toStrictEqual({ body: "document B", exists: true, revision: "b1" });
+    expect(result.current.saveState).toBe("saved");
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("saves edits to a newly loaded document after the stale save finishes", async () => {
+    const firstSave = deferred<{ document: TestDocument; status: "saved" }>();
+    const persist = vi
+      .fn()
+      .mockReturnValueOnce(firstSave.promise)
+      .mockResolvedValueOnce({ document: { body: "edited B", exists: true, revision: "b2" }, status: "saved" });
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({ mergeSaved: (_local, saved) => saved, onError: vi.fn(), persist }),
+    );
+    act(() => {
+      result.current.load({ body: "document A", exists: true, revision: "a1" });
+      result.current.edit((current) => ({ ...current, body: "edited A" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    act(() => {
+      result.current.load({ body: "document B", exists: true, revision: "b1" });
+      result.current.edit((current) => ({ ...current, body: "edited B" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    act(() => {
+      firstSave.resolve({ document: { body: "edited A", exists: true, revision: "a2" }, status: "saved" });
+    });
+    await act(async () => {
+      await firstSave.promise;
+    });
+    expect(persist).toHaveBeenLastCalledWith({ body: "edited B", exists: true, revision: "b1" }, "b1", false);
+    expect(result.current.document).toStrictEqual({ body: "edited B", exists: true, revision: "b2" });
+    expect(result.current.saveState).toBe("saved");
   });
 
   it("synchronizes only while saved", () => {
@@ -116,6 +191,59 @@ describe(useAutosavedDocument, () => {
     expect(result.current.document?.body).toBe("local");
     expect(result.current.saveState).toBe("error");
     expect(onError.mock.calls).toStrictEqual([[expect.any(Error)]]);
+  });
+
+  it("cancels pending navigation after persistence rejects", async () => {
+    const navigate = vi.fn();
+    const onError = vi.fn();
+    const persist = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("disk full"))
+      .mockResolvedValueOnce({ document: { body: "retry", exists: true, revision: "r2" }, status: "saved" });
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({ mergeSaved: (_local, saved) => saved, onError, persist }),
+    );
+    act(() => {
+      result.current.load({ body: "old", exists: true, revision: "r1" });
+      result.current.edit((current) => ({ ...current, body: "local" }));
+    });
+    await act(async () => result.current.requestNavigation(navigate));
+    expect(result.current.document?.body).toBe("local");
+    expect(result.current.saveState).toBe("error");
+    act(() => {
+      result.current.edit((current) => ({ ...current, body: "retry" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("cancels pending navigation after onSaved rejects", async () => {
+    const navigate = vi.fn();
+    const onError = vi.fn();
+    const onSaved = vi.fn().mockRejectedValueOnce(new Error("refresh failed"));
+    const persist = vi
+      .fn()
+      .mockResolvedValueOnce({ document: { body: "local", exists: true, revision: "r2" }, status: "saved" })
+      .mockResolvedValueOnce({ document: { body: "retry", exists: true, revision: "r3" }, status: "saved" });
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({ mergeSaved: (_local, saved) => saved, onError, onSaved, persist }),
+    );
+    act(() => {
+      result.current.load({ body: "old", exists: true, revision: "r1" });
+      result.current.edit((current) => ({ ...current, body: "local" }));
+    });
+    await act(async () => result.current.requestNavigation(navigate));
+    expect(result.current.saveState).toBe("error");
+    expect(onError.mock.calls).toStrictEqual([[expect.any(Error)]]);
+    act(() => {
+      result.current.edit((current) => ({ ...current, body: "retry" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("overwrites against the external revision", async () => {
@@ -185,5 +313,91 @@ describe(useAutosavedDocument, () => {
     expect(persist).toHaveBeenCalledTimes(2);
     expect(persist).toHaveBeenLastCalledWith(expect.objectContaining({ body: "second" }), "r2", false);
     expect(navigate.mock.calls).toStrictEqual([[]]);
+  });
+
+  it("joins an already in-flight save before navigating", async () => {
+    const firstSave = deferred<{ document: TestDocument; status: "saved" }>();
+    const navigate = vi.fn();
+    const persist = vi.fn().mockReturnValue(firstSave.promise);
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({ mergeSaved: (_local, saved) => saved, onError: vi.fn(), persist }),
+    );
+    act(() => {
+      result.current.load({ body: "old", exists: true, revision: "r1" });
+      result.current.edit((current) => ({ ...current, body: "edited" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    expect(result.current.saveState).toBe("saving");
+    let navigation = Promise.resolve();
+    act(() => {
+      navigation = result.current.requestNavigation(navigate);
+    });
+    expect(persist.mock.calls).toStrictEqual([[{ body: "edited", exists: true, revision: "r1" }, "r1", false]]);
+    act(() => {
+      firstSave.resolve({ document: { body: "edited", exists: true, revision: "r2" }, status: "saved" });
+    });
+    await act(async () => {
+      await navigation;
+    });
+    expect(navigate.mock.calls).toStrictEqual([[]]);
+  });
+
+  it("uses the latest pending navigation request", async () => {
+    const firstSave = deferred<{ document: TestDocument; status: "saved" }>();
+    const firstNavigate = vi.fn();
+    const latestNavigate = vi.fn();
+    const persist = vi.fn().mockReturnValue(firstSave.promise);
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({ mergeSaved: (_local, saved) => saved, onError: vi.fn(), persist }),
+    );
+    act(() => {
+      result.current.load({ body: "old", exists: true, revision: "r1" });
+      result.current.edit((current) => ({ ...current, body: "edited" }));
+    });
+    let firstNavigation = Promise.resolve();
+    let latestNavigation = Promise.resolve();
+    act(() => {
+      firstNavigation = result.current.requestNavigation(firstNavigate);
+      latestNavigation = result.current.requestNavigation(latestNavigate);
+    });
+    act(() => {
+      firstSave.resolve({ document: { body: "edited", exists: true, revision: "r2" }, status: "saved" });
+    });
+    await act(async () => {
+      await Promise.all([firstNavigation, latestNavigation]);
+    });
+    expect(firstNavigate).not.toHaveBeenCalled();
+    expect(latestNavigate.mock.calls).toStrictEqual([[]]);
+  });
+
+  it("does not run save callbacks or navigation after unmount", async () => {
+    const firstSave = deferred<{ document: TestDocument; status: "saved" }>();
+    const navigate = vi.fn();
+    const onError = vi.fn();
+    const onSaved = vi.fn();
+    const persist = vi.fn().mockReturnValue(firstSave.promise);
+    const { result, unmount } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({ mergeSaved: (_local, saved) => saved, onError, onSaved, persist }),
+    );
+    act(() => {
+      result.current.load({ body: "old", exists: true, revision: "r1" });
+      result.current.edit((current) => ({ ...current, body: "edited" }));
+    });
+    let navigation = Promise.resolve();
+    act(() => {
+      navigation = result.current.requestNavigation(navigate);
+    });
+    unmount();
+    act(() => {
+      firstSave.resolve({ document: { body: "edited", exists: true, revision: "r2" }, status: "saved" });
+    });
+    await act(async () => {
+      await navigation;
+    });
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
   });
 });
