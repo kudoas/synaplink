@@ -152,7 +152,7 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenTag, ref
           EditorView.theme({
             "&": { backgroundColor: "transparent", height: "100%" },
             ".cm-content": { padding: "20px 4px 120px" },
-            ".cm-focused": { outline: "none" },
+            "&.cm-focused": { outline: "none" },
             ".cm-gutters": { display: "none" },
             ".cm-scroller": { fontFamily: "var(--font-body)", lineHeight: "1.8" },
             ".cm-zettel-link": {
