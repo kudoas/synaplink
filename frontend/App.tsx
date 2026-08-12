@@ -1,21 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { DocumentEditor } from "./components/DocumentEditor";
+import { EditConflictDialog } from "./components/EditConflictDialog";
+import { SaveStatus } from "./components/SaveStatus";
 import { TagResults } from "./components/TagResults";
 import { uniqueTags } from "./tag-parser";
 import type { NoteDocument, NoteSummary } from "./types";
-
-type SaveState = "saved" | "dirty" | "saving" | "error";
+import { useAutosavedDocument } from "./use-autosaved-document";
 
 export function App() {
   const [vault, setVault] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteSummary[]>([]);
-  const [draft, setDraft] = useState<NoteDocument | null>(null);
   const [search, setSearch] = useState("");
-  const [saveState, setSaveState] = useState<SaveState>("saved");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [tagResults, setTagResults] = useState<NoteSummary[]>([]);
-  const [conflict, setConflict] = useState<NoteDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshNotes = useCallback(async () => {
@@ -25,6 +23,41 @@ export function App() {
       setError(String(error));
     }
   }, []);
+
+  const {
+    acceptExternal,
+    conflict,
+    document: draft,
+    edit,
+    load,
+    overwriteConflict,
+    requestNavigation,
+    saveState,
+    synchronize,
+  } = useAutosavedDocument<NoteDocument>({
+    mergeSaved: (local, saved) => ({
+      ...local,
+      modifiedAt: saved.modifiedAt,
+      revision: saved.revision,
+      tags: saved.tags,
+    }),
+    onError: (saveError) => {
+      setError(String(saveError));
+    },
+    onSaved: refreshNotes,
+    persist: async (note, expectedRevision, overwrite) => {
+      const result = await api.saveNote({
+        body: note.body,
+        expectedRevision: expectedRevision ?? note.revision,
+        id: note.id,
+        ...(overwrite ? { overwrite: true } : {}),
+        title: note.title,
+      });
+      return result.status === "saved"
+        ? { document: result.note, status: "saved" }
+        : { current: result.current, status: "conflict" };
+    },
+  });
 
   useEffect(() => {
     void (async () => {
@@ -56,45 +89,24 @@ export function App() {
     }
     const latest = notes.find((note) => note.id === draft.id);
     if (latest && latest.revision !== draft.revision) {
-      void api
-        .readNote(draft.id)
-        .then(setDraft)
-        .catch((error) => {
-          setError(String(error));
-        });
-    }
-  }, [draft, notes, saveState]);
-
-  useEffect(() => {
-    if (!draft || saveState !== "dirty" || conflict) {
-      return;
-    }
-    const timeout = window.setTimeout(async () => {
-      setSaveState("saving");
-      try {
-        const result = await api.saveNote({
-          body: draft.body,
-          expectedRevision: draft.revision,
-          id: draft.id,
-          title: draft.title,
-        });
-        if (result.status === "conflict") {
-          setConflict(result.current);
-          setSaveState("dirty");
-          return;
+      const request = { canceled: false };
+      void (async () => {
+        try {
+          const note = await api.readNote(draft.id);
+          if (!request.canceled) {
+            synchronize(note);
+          }
+        } catch (error) {
+          if (!request.canceled) {
+            setError(String(error));
+          }
         }
-        setDraft(result.note);
-        setSaveState("saved");
-        await refreshNotes();
-      } catch (error) {
-        setSaveState("error");
-        setError(String(error));
-      }
-    }, 700);
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [conflict, draft, refreshNotes, saveState]);
+      })();
+      return () => {
+        request.canceled = true;
+      };
+    }
+  }, [draft, notes, saveState, synchronize]);
 
   const visibleNotes = useMemo(() => {
     const query = search.trim().normalize("NFKC").toLocaleLowerCase();
@@ -112,54 +124,74 @@ export function App() {
 
   const tags = useMemo(() => uniqueTags(draft?.body ?? ""), [draft?.body]);
 
+  const navigateFromNote = useCallback(
+    (action: () => void) => {
+      void requestNavigation(action);
+    },
+    [requestNavigation],
+  );
+
   const chooseVault = async () => {
     const selected = await api.chooseVault();
     if (!selected) {
       return;
     }
-    try {
-      await api.setVault(selected);
-      setVault(selected);
-      setDraft(null);
-      setActiveTag(null);
-      await refreshNotes();
-    } catch (error) {
-      setError(String(error));
-    }
+    navigateFromNote(() => {
+      void (async () => {
+        try {
+          await api.setVault(selected);
+          setVault(selected);
+          load(null);
+          setActiveTag(null);
+          await refreshNotes();
+        } catch (error) {
+          setError(String(error));
+        }
+      })();
+    });
   };
 
-  const openNote = async (id: string) => {
-    if (saveState === "dirty" || saveState === "saving") {
-      return;
-    }
-    try {
-      setDraft(await api.readNote(id));
-      setActiveTag(null);
-      setSaveState("saved");
-    } catch (error) {
-      setError(String(error));
-    }
+  const openNote = (id: string) => {
+    navigateFromNote(() => {
+      void (async () => {
+        try {
+          const note = await api.readNote(id);
+          load(note);
+          setActiveTag(null);
+        } catch (error) {
+          setError(String(error));
+        }
+      })();
+    });
   };
 
-  const createNote = async () => {
-    try {
-      const note = await api.createNote();
-      setDraft(note);
-      setActiveTag(null);
-      setSaveState("saved");
-      await refreshNotes();
-    } catch (error) {
-      setError(String(error));
-    }
+  const createNote = () => {
+    navigateFromNote(() => {
+      void (async () => {
+        try {
+          const note = await api.createNote();
+          load(note);
+          setActiveTag(null);
+          await refreshNotes();
+        } catch (error) {
+          setError(String(error));
+        }
+      })();
+    });
   };
 
-  const openTag = async (tag: string) => {
-    try {
-      setTagResults(await api.searchTag(tag));
-      setActiveTag(tag);
-    } catch (error) {
-      setError(String(error));
-    }
+  const openTag = (tag: string) => {
+    navigateFromNote(() => {
+      void (async () => {
+        try {
+          const results = await api.searchTag(tag);
+          setTagResults(results);
+          setActiveTag(tag);
+        } catch (error) {
+          setError(String(error));
+        }
+      })();
+    });
   };
 
   const removeNote = async () => {
@@ -168,31 +200,8 @@ export function App() {
     }
     try {
       await api.deleteNote(draft.id);
-      setDraft(null);
+      load(null);
       await refreshNotes();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-
-  const overwriteConflict = async () => {
-    if (!draft) {
-      return;
-    }
-    try {
-      const result = await api.saveNote({
-        body: draft.body,
-        expectedRevision: conflict?.revision ?? draft.revision,
-        id: draft.id,
-        overwrite: true,
-        title: draft.title,
-      });
-      if (result.status === "saved") {
-        setDraft(result.note);
-        setConflict(null);
-        setSaveState("saved");
-        await refreshNotes();
-      }
     } catch (error) {
       setError(String(error));
     }
@@ -237,12 +246,18 @@ export function App() {
             placeholder="メモを検索"
           />
         </div>
-        <button className="new-note-button" onClick={() => void createNote()}>
+        <button className="new-note-button" onClick={createNote}>
           <span>＋</span> 新しいメモ
         </button>
         <div className="note-list">
           {visibleNotes.map((note) => (
-            <button className={`note-row ${draft?.id === note.id ? "active" : ""}`} key={note.id} onClick={() => void openNote(note.id)}>
+            <button
+              className={`note-row ${draft?.id === note.id ? "active" : ""}`}
+              key={note.id}
+              onClick={() => {
+                openNote(note.id);
+              }}
+            >
               <strong>{note.title.trim() || "無題"}</strong>
               <p>{note.preview || "本文はまだありません。"}</p>
               <time>{new Date(note.modifiedAt).toLocaleDateString("ja-JP", { day: "numeric", month: "short" })}</time>
@@ -262,14 +277,12 @@ export function App() {
           onBack={() => {
             setActiveTag(null);
           }}
-          onSelect={(id) => void openNote(id)}
+          onSelect={openNote}
         />
       ) : draft ? (
         <main className="document-view">
           <header className="document-toolbar">
-            <span className={`save-status ${saveState}`}>
-              {saveState === "saved" ? "保存済み" : saveState === "saving" ? "保存中…" : saveState === "error" ? "保存エラー" : "未保存"}
-            </span>
+            <SaveStatus state={saveState} />
             <button className="delete-button" onClick={() => void removeNote()}>
               ゴミ箱へ
             </button>
@@ -277,13 +290,11 @@ export function App() {
           <DocumentEditor
             body={draft.body}
             onBodyChange={(body) => {
-              setDraft((current) => (current ? { ...current, body } : current));
-              setSaveState("dirty");
+              edit((current) => ({ ...current, body }));
             }}
-            onOpenTag={(tag) => void openTag(tag)}
+            onOpenTag={openTag}
             onTitleChange={(title) => {
-              setDraft({ ...draft, title });
-              setSaveState("dirty");
+              edit((current) => ({ ...current, title }));
             }}
             title={draft.title}
           />
@@ -303,7 +314,12 @@ export function App() {
         <h2>このメモのタグ</h2>
         <div className="tag-list">
           {tags.map((tag) => (
-            <button key={tag.normalizedName} onClick={() => void openTag(tag.displayName)}>
+            <button
+              key={tag.normalizedName}
+              onClick={() => {
+                openTag(tag.displayName);
+              }}
+            >
               #{tag.displayName}
               <span>→</span>
             </button>
@@ -319,27 +335,12 @@ export function App() {
       </aside>
 
       {conflict && (
-        <div className="modal-backdrop">
-          <section className="modal" role="dialog" aria-modal="true">
-            <span className="eyebrow">EDIT CONFLICT</span>
-            <h2>外部でメモが変更されました</h2>
-            <p>現在の編集を残すか、外部で変更された内容を読み込んでください。</p>
-            <div className="modal-actions">
-              <button
-                onClick={() => {
-                  setDraft(conflict);
-                  setConflict(null);
-                  setSaveState("saved");
-                }}
-              >
-                外部の内容を読む
-              </button>
-              <button className="primary-button" onClick={() => void overwriteConflict()}>
-                現在の編集で上書き
-              </button>
-            </div>
-          </section>
-        </div>
+        <EditConflictDialog
+          onAcceptExternal={acceptExternal}
+          onOverwrite={() => {
+            void overwriteConflict();
+          }}
+        />
       )}
 
       {error && (
