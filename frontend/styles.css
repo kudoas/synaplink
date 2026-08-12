@@ -88,10 +88,16 @@ button { color: inherit; }
 .empty-view h1 { margin: 12px 0 6px; font: 600 25px var(--font-display); }
 .empty-view p { color: var(--muted); font-size: 13px; }
 .results-view { padding: 45px clamp(35px, 6vw, 85px); overflow-y: auto; background: #fbf9f4; }
+.connected-notes-page { display: flex; flex-direction: column; }
 .back-button { padding: 0; color: var(--muted); font-size: 12px; }
 .results-heading { margin: 55px 0 30px; }
 .results-heading h1 { margin: 8px 0; color: var(--accent); font: 600 39px var(--font-display); }
-.results-heading p { color: var(--muted); }
+.tag-memo-heading { margin-bottom: 0; }
+.tag-memo-title-row { display: flex; align-items: flex-end; justify-content: space-between; }
+.tag-memo-editor { min-height: 180px; margin-bottom: 24px; border-bottom: 1px solid var(--line); }
+.tag-memo-editor .memo-editor { min-height: 180px; }
+.tag-memo-loading { padding: 28px 4px; color: var(--muted); font-size: 12px; }
+.connected-notes-page .result-grid { padding-bottom: 40px; }
 .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 13px; }
 .result-card { min-height: 165px; padding: 19px; border: 1px solid var(--line); border-radius: 10px; background: #fffdfa; cursor: pointer; text-align: left; transition: transform .15s, box-shadow .15s; }
 .result-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(55,46,35,.08); }
