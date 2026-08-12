@@ -167,6 +167,43 @@ describe(useAutosavedDocument, () => {
     expect({ latestWasCurrent }).toStrictEqual({ latestWasCurrent: true });
   });
 
+  it("unsafeな遷移中止はqueued遷移を実行せず両requestを完了する", async () => {
+    const destination = deferred<void>();
+    const unsafeError = new Error("rollback failed");
+    const latestNavigate = vi.fn();
+    const onError = vi.fn();
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({
+        mergeSaved: (_local, saved) => saved,
+        onError,
+        persist: vi.fn(),
+      }),
+    );
+    act(() => {
+      result.current.load({ body: "source", exists: true, revision: "r1" });
+    });
+    let firstNavigation = Promise.resolve();
+    let latestNavigation = Promise.resolve();
+    act(() => {
+      firstNavigation = result.current.requestNavigation(async () => {
+        await destination.promise;
+        return { error: unsafeError, status: "abort" };
+      });
+      latestNavigation = result.current.requestNavigation(latestNavigate);
+    });
+
+    await act(async () => {
+      destination.resolve();
+      await Promise.all([firstNavigation, latestNavigation]);
+    });
+
+    expect({
+      errorCalls: onError.mock.calls,
+      latestCalls: latestNavigate.mock.calls,
+      navigating: result.current.isNavigating,
+    }).toStrictEqual({ errorCalls: [[unsafeError]], latestCalls: [], navigating: false });
+  });
+
   it("keeps navigation pending off after a conflict", async () => {
     const navigate = vi.fn();
     const external = { body: "external", exists: true, revision: "r2" };

@@ -523,6 +523,118 @@ describe(App, () => {
     });
   });
 
+  it("保存先変更中のpollを破棄しrollback後も元のタグメモを保存する", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const newVaultNotes = deferred<NoteSummary[]>();
+    const poll = deferred<TagMemoDocument>();
+    const vaultState = { current: "/tmp/notes" };
+    const notesByVault = new Map([
+      ["/tmp/notes", Promise.resolve([summary])],
+      ["/tmp/other", newVaultNotes.promise],
+    ]);
+    vi.mocked(api.getVault).mockResolvedValue(vaultState.current);
+    vi.mocked(api.listNotes).mockImplementation(async () => {
+      const selectedNotes = await notesByVault.get(vaultState.current)!;
+      return selectedNotes;
+    });
+    vi.mocked(api.readNote).mockResolvedValue(document);
+    vi.mocked(api.searchTag).mockResolvedValue([summary]);
+    vi.mocked(api.readTagMemo).mockResolvedValueOnce(tagMemo).mockReturnValueOnce(poll.promise);
+    vi.mocked(api.chooseVault).mockResolvedValue("/tmp/other");
+    // oxlint-disable-next-line typescript/promise-function-async -- The mock must update its state synchronously.
+    vi.mocked(api.setVault).mockImplementation((selected): Promise<void> => {
+      vaultState.current = selected;
+      return Promise.resolve();
+    });
+    vi.mocked(api.saveTagMemo).mockResolvedValue({
+      memo: { ...tagMemo, body: "rollback後の編集", revision: "tag-r2" },
+      status: "saved",
+    });
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
+    await waitFor(() => {
+      expect(container.querySelector(".cm-zettel-tag")).not.toBeNull();
+    });
+    fireEvent.mouseDown(container.querySelector(".cm-zettel-tag")!);
+    await waitFor(() => {
+      expect(container.querySelector(".tag-memo-editor .cm-editor")).not.toBeNull();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+
+    fireEvent.click(screen.getByTitle("保存先を変更"));
+    await screen.findByText("移動先を読み込み中…");
+    await waitFor(() => {
+      expect(api.setVault).toHaveBeenCalledWith("/tmp/other");
+    });
+    await act(async () => {
+      poll.resolve({ ...tagMemo, body: "別vaultの本文", revision: "other-r1" });
+      await poll.promise;
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(api.readTagMemo).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      newVaultNotes.reject(new Error("new vault list failed"));
+      await newVaultNotes.promise.catch(() => null);
+    });
+    await screen.findByText("Error: new vault list failed");
+    await waitFor(() => {
+      expect(container.querySelector(".tag-memo-editor .cm-editor")).not.toBeNull();
+    });
+    const restoredView = EditorView.findFromDOM(container.querySelector<HTMLElement>(".tag-memo-editor .cm-editor")!);
+    expect({ body: restoredView?.state.doc.toString(), vaultCalls: vi.mocked(api.setVault).mock.calls }).toStrictEqual({
+      body: tagMemo.body,
+      vaultCalls: [["/tmp/other"], ["/tmp/notes"]],
+    });
+    editBody(container, "rollback後の編集");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    expect(api.saveTagMemo).toHaveBeenCalledExactlyOnceWith({
+      body: "rollback後の編集",
+      expectedRevision: "tag-r1",
+      tag: "りんご",
+    });
+  });
+
+  it("保存先rollback失敗時はqueued遷移を止めてエラーを保持する", async () => {
+    const newVaultNotes = deferred<NoteSummary[]>();
+    vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
+    vi.mocked(api.listNotes).mockResolvedValueOnce([summary, nextSummary]).mockReturnValueOnce(newVaultNotes.promise);
+    vi.mocked(api.readNote).mockResolvedValueOnce(document).mockResolvedValueOnce(nextDocument);
+    vi.mocked(api.searchTag).mockResolvedValue([summary]);
+    vi.mocked(api.readTagMemo).mockResolvedValue(tagMemo);
+    vi.mocked(api.chooseVault).mockResolvedValue("/tmp/other");
+    vi.mocked(api.setVault).mockResolvedValueOnce().mockRejectedValueOnce(new Error("rollback failed"));
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
+    await waitFor(() => {
+      expect(container.querySelector(".cm-zettel-tag")).not.toBeNull();
+    });
+    fireEvent.mouseDown(container.querySelector(".cm-zettel-tag")!);
+    await waitFor(() => {
+      expect(container.querySelector(".tag-memo-editor .cm-editor")).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByTitle("保存先を変更"));
+    await screen.findByText("移動先を読み込み中…");
+    await waitFor(() => {
+      expect(api.setVault).toHaveBeenCalledWith("/tmp/other");
+    });
+    fireEvent.click(screen.getByRole("button", { name: /次のメモ/u }));
+    await act(async () => {
+      newVaultNotes.reject(new Error("new vault list failed"));
+      await newVaultNotes.promise.catch(() => null);
+    });
+
+    await expect(screen.findByText("Error: rollback failed")).resolves.toBeInTheDocument();
+    expect({
+      heading: screen.getByRole("heading", { level: 1, name: "#りんご" }).textContent,
+      readNoteCalls: vi.mocked(api.readNote).mock.calls,
+    }).toStrictEqual({ heading: "#りんご", readNoteCalls: [[document.id]] });
+  });
+
   it("通常メモを700ms後に保存する", async () => {
     vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
     vi.mocked(api.listNotes).mockResolvedValue([summary]);
@@ -668,6 +780,9 @@ describe(App, () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
+    await waitFor(() => {
+      expect(container.querySelector(".document-view .cm-editor")).not.toBeNull();
+    });
     editBody(container, "保存先変更前の編集");
 
     fireEvent.click(screen.getByTitle("保存先を変更"));

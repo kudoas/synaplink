@@ -6,7 +6,11 @@ import { EditConflictDialog } from "./components/EditConflictDialog";
 import { SaveStatus } from "./components/SaveStatus";
 import { uniqueTags } from "./tag-parser";
 import type { NoteDocument, NoteSummary, TagMemoDocument } from "./types";
-import { useAutosavedDocument } from "./use-autosaved-document";
+import {
+  type AbortedNavigation,
+  type NavigationResult,
+  useAutosavedDocument,
+} from "./use-autosaved-document";
 
 export function App() {
   const [vault, setVault] = useState<string | null>(null);
@@ -165,7 +169,7 @@ export function App() {
   }, [draft, notes, saveState, synchronize]);
 
   useEffect(() => {
-    if (!activeTag || tagMemoSaveState !== "saved" || tagMemoState !== "ready") {
+    if (!activeTag || isTagMemoNavigating || tagMemoSaveState !== "saved" || tagMemoState !== "ready") {
       return;
     }
     const interval = window.setInterval(() => {
@@ -189,7 +193,7 @@ export function App() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [activeTag, synchronizeTagMemo, tagMemoSaveState, tagMemoState]);
+  }, [activeTag, isTagMemoNavigating, synchronizeTagMemo, tagMemoSaveState, tagMemoState]);
 
   const visibleNotes = useMemo(() => {
     const query = search.trim().normalize("NFKC").toLocaleLowerCase();
@@ -208,14 +212,15 @@ export function App() {
   const tags = useMemo(() => uniqueTags(draft?.body ?? ""), [draft?.body]);
 
   const requestEditorNavigation = useCallback(
-    (action: (isCurrent: () => boolean) => void | Promise<void>) => {
+    (action: (isCurrent: () => boolean) => NavigationResult | Promise<NavigationResult>) => {
       const generation = editorNavigationGeneration.current + 1;
       editorNavigationGeneration.current = generation;
       invalidateExternalRead();
       const navigate = activeTag ? requestTagMemoNavigation : requestNavigation;
-      void navigate(async () => {
-        await action(() => editorNavigationGeneration.current === generation);
-      });
+      void navigate(
+        (): NavigationResult | Promise<NavigationResult> =>
+          action(() => editorNavigationGeneration.current === generation),
+      );
     },
     [activeTag, invalidateExternalRead, requestNavigation, requestTagMemoNavigation],
   );
@@ -271,28 +276,40 @@ export function App() {
 
   const chooseVault = () => {
     requestEditorNavigation(async (isCurrent) => {
+      if (activeTag) {
+        tagRequest.current += 1;
+        tagMemoReadGeneration.current += 1;
+      }
+      const restoreVault = async (): Promise<AbortedNavigation | void> => {
+        if (!vault) {
+          return;
+        }
+        try {
+          await api.setVault(vault);
+        } catch (rollbackError) {
+          return { error: rollbackError, status: "abort" };
+        }
+      };
       const selected = await api.chooseVault();
       if (!selected || !isCurrent()) {
         return;
       }
       await api.setVault(selected);
       if (!isCurrent()) {
-        if (vault) {
-          await api.setVault(vault);
-        }
-        return;
+        return restoreVault();
       }
       const selectedNotes = await api.listNotes().catch(async (error: unknown) => {
-        if (vault) {
-          await api.setVault(vault);
+        const abort = await restoreVault();
+        if (abort) {
+          return abort;
         }
         throw error;
       });
+      if (!Array.isArray(selectedNotes)) {
+        return selectedNotes;
+      }
       if (!isCurrent()) {
-        if (vault) {
-          await api.setVault(vault);
-        }
-        return;
+        return restoreVault();
       }
       setVault(selected);
       setNotes(selectedNotes);

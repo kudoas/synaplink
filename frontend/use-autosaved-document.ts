@@ -20,7 +20,13 @@ interface Options<T extends VersionedDocument> {
 
 type PersistRequest = { overwrite: false } | { expectedRevision: string | null; overwrite: true };
 type SaveCurrency<T> = { status: "current" } | { document: T; status: "retry" } | { status: "stop" };
-type NavigationAction = () => void | Promise<void>;
+export interface AbortedNavigation {
+  error: unknown;
+  status: "abort";
+}
+
+export type NavigationResult = AbortedNavigation | void;
+type NavigationAction = () => NavigationResult | Promise<NavigationResult>;
 
 interface NavigationRequest {
   action: NavigationAction;
@@ -148,7 +154,14 @@ export function useAutosavedDocument<T extends VersionedDocument>({
           const { action, generation } = request;
           try {
             // oxlint-disable-next-line eslint/no-await-in-loop -- Destination transitions are serialized by design.
-            await action();
+            const result = await action();
+            if (result?.status === "abort") {
+              navigationGenerationRef.current += 1;
+              pendingNavigationRef.current = null;
+              queuedNavigationRef.current = null;
+              onErrorRef.current(result.error);
+              break;
+            }
           } catch (error) {
             reportNavigationError(error, generation);
           }
