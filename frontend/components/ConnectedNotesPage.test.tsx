@@ -5,6 +5,7 @@ import { ConnectedNotesPage } from "./ConnectedNotesPage";
 
 const savedMemo = { body: "秋に食べ比べたい", exists: true, revision: "r1", tag: "りんご" };
 const taggedMemo = { ...savedMemo, body: "#果物" };
+const longMemo = { ...savedMemo, body: "本文\n".repeat(200) };
 
 describe(ConnectedNotesPage, () => {
   // oxlint-disable-next-line vitest/no-hooks -- CodeMirror instances must be destroyed between component cases.
@@ -31,6 +32,26 @@ describe(ConnectedNotesPage, () => {
     const editor = container.querySelector(".tag-memo-editor");
     const grid = container.querySelector(".result-grid");
     expect(editor?.compareDocumentPosition(grid!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("長いタグ本文を独立したスクロール領域に収める", () => {
+    render(
+      <ConnectedNotesPage
+        isNavigating={false}
+        memo={longMemo}
+        memoState="ready"
+        notes={[]}
+        saveState="saved"
+        tag="りんご"
+        onBack={vi.fn()}
+        onBodyChange={vi.fn()}
+        onOpenTag={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const region = screen.getByRole("region", { name: "#りんご のメモ" });
+    expect(region).toHaveStyle({ height: "35vh", maxHeight: "320px", minHeight: "180px" });
   });
 
   it("読み込み中は編集を開始できない", () => {
