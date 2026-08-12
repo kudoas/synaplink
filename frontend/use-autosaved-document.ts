@@ -20,9 +20,16 @@ interface Options<T extends VersionedDocument> {
 
 type PersistRequest = { overwrite: false } | { expectedRevision: string | null; overwrite: true };
 type SaveCurrency<T> = { status: "current" } | { document: T; status: "retry" } | { status: "stop" };
+type NavigationAction = () => void | Promise<void>;
+
+interface NavigationRequest {
+  action: NavigationAction;
+  generation: number;
+}
 
 export interface AutosavedDocumentController<T extends VersionedDocument> {
   document: T | null;
+  isNavigating: boolean;
   saveState: SaveState;
   conflict: T | null;
   load: (document: T | null) => void;
@@ -30,7 +37,7 @@ export interface AutosavedDocumentController<T extends VersionedDocument> {
   synchronize: (document: T) => void;
   acceptExternal: () => void;
   overwriteConflict: () => Promise<void>;
-  requestNavigation: (navigate: () => void) => Promise<void>;
+  requestNavigation: (navigate: NavigationAction) => Promise<void>;
 }
 
 export function useAutosavedDocument<T extends VersionedDocument>({
@@ -41,6 +48,7 @@ export function useAutosavedDocument<T extends VersionedDocument>({
   delay = 700,
 }: Options<T>): AutosavedDocumentController<T> {
   const [document, setDocument] = useState<T | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [conflict, setConflict] = useState<T | null>(null);
 
@@ -49,7 +57,11 @@ export function useAutosavedDocument<T extends VersionedDocument>({
   const conflictRef = useRef<T | null>(null);
   const editGenerationRef = useRef(0);
   const loadGenerationRef = useRef(0);
-  const pendingNavigationRef = useRef<(() => void) | null>(null);
+  const navigationGenerationRef = useRef(0);
+  const navigationInFlightRef = useRef<Promise<void> | null>(null);
+  const navigationRef = useRef(false);
+  const pendingNavigationRef = useRef<NavigationRequest | null>(null);
+  const queuedNavigationRef = useRef<NavigationRequest | null>(null);
   const inFlightRef = useRef<Promise<void> | null>(null);
   const mountedRef = useRef(true);
 
@@ -70,7 +82,10 @@ export function useAutosavedDocument<T extends VersionedDocument>({
     return () => {
       mountedRef.current = false;
       loadGenerationRef.current += 1;
+      navigationGenerationRef.current += 1;
       pendingNavigationRef.current = null;
+      queuedNavigationRef.current = null;
+      navigationRef.current = false;
     };
   }, []);
 
@@ -79,9 +94,20 @@ export function useAutosavedDocument<T extends VersionedDocument>({
     setDocument(next);
   }, []);
 
+  const updateNavigating = useCallback((next: boolean) => {
+    navigationRef.current = next;
+    setIsNavigating(next);
+  }, []);
+
   const updateSaveState = useCallback((next: SaveState) => {
     saveStateRef.current = next;
     setSaveState(next);
+  }, []);
+
+  const reportNavigationError = useCallback((error: unknown, generation: number) => {
+    if (mountedRef.current && navigationGenerationRef.current === generation) {
+      onErrorRef.current(error);
+    }
   }, []);
 
   const updateConflict = useCallback((next: T | null) => {
@@ -102,6 +128,50 @@ export function useAutosavedDocument<T extends VersionedDocument>({
     }
     return { status: "stop" };
   }, []);
+
+  const runNavigation = useCallback(
+    async (initial: NavigationRequest): Promise<void> => {
+      const activeNavigation = navigationInFlightRef.current;
+      if (activeNavigation) {
+        queuedNavigationRef.current = initial;
+        await activeNavigation;
+        return;
+      }
+
+      const run = async () => {
+        updateNavigating(true);
+        let request: NavigationRequest | null = initial;
+        while (request) {
+          if (!mountedRef.current) {
+            break;
+          }
+          const { action, generation } = request;
+          try {
+            // oxlint-disable-next-line eslint/no-await-in-loop -- Destination transitions are serialized by design.
+            await action();
+          } catch (error) {
+            reportNavigationError(error, generation);
+          }
+          request = queuedNavigationRef.current;
+          queuedNavigationRef.current = null;
+        }
+        if (mountedRef.current) {
+          updateNavigating(false);
+        }
+      };
+
+      const inFlight = run();
+      navigationInFlightRef.current = inFlight;
+      try {
+        await inFlight;
+      } finally {
+        if (navigationInFlightRef.current === inFlight) {
+          navigationInFlightRef.current = null;
+        }
+      }
+    },
+    [reportNavigationError, updateNavigating],
+  );
 
   const persistCurrent = useCallback(
     async (request?: PersistRequest): Promise<void> => {
@@ -166,9 +236,12 @@ export function useAutosavedDocument<T extends VersionedDocument>({
             }
             if (editGenerationRef.current === generationAtStart) {
               updateSaveState("saved");
-              const navigate = pendingNavigationRef.current;
+              const navigation = pendingNavigationRef.current;
               pendingNavigationRef.current = null;
-              navigate?.();
+              if (navigation) {
+                // oxlint-disable-next-line eslint/no-await-in-loop -- Saving owns the complete destination transition.
+                await runNavigation(navigation);
+              }
               return;
             }
             updateSaveState("dirty");
@@ -206,7 +279,7 @@ export function useAutosavedDocument<T extends VersionedDocument>({
         }
       }
     },
-    [classifySave, updateConflict, updateDocument, updateSaveState],
+    [classifySave, runNavigation, updateConflict, updateDocument, updateSaveState],
   );
 
   useEffect(() => {
@@ -233,7 +306,7 @@ export function useAutosavedDocument<T extends VersionedDocument>({
   const edit = useCallback(
     (update: (document: T) => T) => {
       const {current} = documentRef;
-      if (!current) {
+      if (!current || navigationRef.current) {
         return;
       }
       editGenerationRef.current += 1;
@@ -273,19 +346,26 @@ export function useAutosavedDocument<T extends VersionedDocument>({
   }, [persistCurrent, updateConflict]);
 
   const requestNavigation = useCallback(
-    async (navigate: () => void) => {
-      if (!documentRef.current || saveStateRef.current === "saved") {
-        navigate();
-        return;
-      }
+    async (navigate: NavigationAction) => {
       if (conflictRef.current) {
         pendingNavigationRef.current = null;
         return;
       }
-      pendingNavigationRef.current = navigate;
+      const generation = navigationGenerationRef.current + 1;
+      navigationGenerationRef.current = generation;
+      const navigation = { action: navigate, generation };
+      if (navigationInFlightRef.current) {
+        await runNavigation(navigation);
+        return;
+      }
+      if (!documentRef.current || saveStateRef.current === "saved") {
+        await runNavigation(navigation);
+        return;
+      }
+      pendingNavigationRef.current = navigation;
       await persistCurrent();
     },
-    [persistCurrent],
+    [persistCurrent, runNavigation],
   );
 
   return {
@@ -293,6 +373,7 @@ export function useAutosavedDocument<T extends VersionedDocument>({
     conflict,
     document,
     edit,
+    isNavigating,
     load,
     overwriteConflict,
     requestNavigation,

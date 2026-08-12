@@ -13,7 +13,9 @@ describe(ConnectedNotesPage, () => {
   it("タグ本文を検索結果より上に表示し件数説明を出さない", () => {
     const { container } = render(
       <ConnectedNotesPage
+        isNavigating={false}
         memo={savedMemo}
+        memoState="ready"
         notes={[{ id: "1.txt", modifiedAt: 1, preview: "甘い", revision: "n1", tags: [], title: "紅玉" }]}
         saveState="saved"
         tag="りんご"
@@ -34,7 +36,9 @@ describe(ConnectedNotesPage, () => {
   it("読み込み中は編集を開始できない", () => {
     const { container } = render(
       <ConnectedNotesPage
+        isNavigating={false}
         memo={null}
+        memoState="loading"
         notes={[]}
         saveState="saved"
         tag="りんご"
@@ -49,13 +53,58 @@ describe(ConnectedNotesPage, () => {
     expect(container.querySelector(".cm-editor")).toBeNull();
   });
 
+  it("読み込み失敗時は保存済みや読み込み中と表示しない", () => {
+    const { container } = render(
+      <ConnectedNotesPage
+        isNavigating={false}
+        memo={null}
+        memoState="error"
+        notes={[]}
+        saveState="saved"
+        tag="りんご"
+        onBack={vi.fn()}
+        onBodyChange={vi.fn()}
+        onOpenTag={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("読み込みエラー")).toBeInTheDocument();
+    expect(screen.getByText("タグメモを読み込めませんでした。")).toBeInTheDocument();
+    expect(screen.queryByText("保存済み")).not.toBeInTheDocument();
+    expect(screen.queryByText("タグメモを読み込み中…")).not.toBeInTheDocument();
+    expect(container.querySelector(".cm-editor")).toBeNull();
+  });
+
+  it("遷移中は元のタグメモを編集できない", () => {
+    const { container } = render(
+      <ConnectedNotesPage
+        isNavigating
+        memo={savedMemo}
+        memoState="ready"
+        notes={[]}
+        saveState="saved"
+        tag="りんご"
+        onBack={vi.fn()}
+        onBodyChange={vi.fn()}
+        onOpenTag={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("移動先を読み込み中…")).toBeInTheDocument();
+    expect(container.querySelector(".cm-editor")).toBeNull();
+  });
+
   it("戻る・関連メモ・本文タグの操作を通知する", () => {
     const onBack = vi.fn();
     const onOpenTag = vi.fn();
     const onSelect = vi.fn();
     const { container } = render(
       <ConnectedNotesPage
+        isNavigating={false}
         memo={taggedMemo}
+        memoState="ready"
         notes={[{ id: "1.txt", modifiedAt: 1, preview: "甘い", revision: "n1", tags: [], title: "紅玉" }]}
         saveState="saved"
         tag="りんご"

@@ -71,16 +71,19 @@ function editBody(container: HTMLElement, body: string) {
 
 interface Deferred<Value> {
   promise: Promise<Value>;
+  reject: (error: unknown) => void;
   resolve: (value: Value) => void;
 }
 
 function deferred<Value>(): Deferred<Value> {
+  let rejectDeferred: (error: unknown) => void = vi.fn();
   let resolveDeferred: (value: Value) => void = vi.fn();
   // oxlint-disable-next-line promise/avoid-new -- Tests need explicit control over in-flight operations.
-  const promise = new Promise<Value>((resolve) => {
+  const promise = new Promise<Value>((resolve, reject) => {
+    rejectDeferred = reject;
     resolveDeferred = resolve;
   });
-  return { promise, resolve: resolveDeferred };
+  return { promise, reject: rejectDeferred, resolve: resolveDeferred };
 }
 
 describe(App, () => {
@@ -258,6 +261,7 @@ describe(App, () => {
   });
 
   it("タグメモ読込失敗でも関連メモを表示する", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const connected = { ...summary, id: "connected.txt", title: "関連メモ" };
     vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
     vi.mocked(api.listNotes).mockResolvedValue([summary]);
@@ -273,8 +277,25 @@ describe(App, () => {
 
     await expect(screen.findByRole("button", { name: /関連メモ/u })).resolves.toBeInTheDocument();
     await expect(screen.findByText("Error: tag memo read failed")).resolves.toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "#りんご" })).toBeInTheDocument();
-    expect(container.querySelector(".tag-memo-editor .cm-editor")).toBeNull();
+    expect({
+      editorMissing: container.querySelector(".tag-memo-editor .cm-editor") === null,
+      errorVisible: screen.getByText("読み込みエラー") instanceof HTMLElement,
+      headingVisible: screen.getByRole("heading", { level: 1, name: "#りんご" }) instanceof HTMLElement,
+      loadingMissing: screen.queryByText("タグメモを読み込み中…") === null,
+      savedMissing: screen.queryByText("保存済み") === null,
+      unavailableVisible: screen.getByText("タグメモを読み込めませんでした。") instanceof HTMLElement,
+    }).toStrictEqual({
+      editorMissing: true,
+      errorVisible: true,
+      headingVisible: true,
+      loadingMissing: true,
+      savedMissing: true,
+      unavailableVisible: true,
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(api.readTagMemo).toHaveBeenCalledExactlyOnceWith("りんご");
     expect(api.saveTagMemo).not.toHaveBeenCalled();
   });
 
@@ -310,6 +331,196 @@ describe(App, () => {
 
     expect(api.readTagMemo).toHaveBeenCalledTimes(2);
     expect(api.saveTagMemo).not.toHaveBeenCalled();
+  });
+
+  it("逆順で完了したタグメモpollから最新の内容を保持する", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const firstPoll = deferred<TagMemoDocument>();
+    const latestPoll = deferred<TagMemoDocument>();
+    vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
+    vi.mocked(api.listNotes).mockResolvedValue([summary]);
+    vi.mocked(api.readNote).mockResolvedValue(document);
+    vi.mocked(api.searchTag).mockResolvedValue([summary]);
+    vi.mocked(api.readTagMemo)
+      .mockResolvedValueOnce(tagMemo)
+      .mockReturnValueOnce(firstPoll.promise)
+      .mockReturnValueOnce(latestPoll.promise);
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
+    await waitFor(() => {
+      expect(container.querySelector(".cm-zettel-tag")).not.toBeNull();
+    });
+    fireEvent.mouseDown(container.querySelector(".cm-zettel-tag")!);
+    await waitFor(() => {
+      expect(container.querySelector(".tag-memo-editor .cm-editor")).not.toBeNull();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(api.readTagMemo).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2500);
+    });
+    expect(api.readTagMemo).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      latestPoll.resolve({ ...tagMemo, body: "最新の外部更新", revision: "tag-r3" });
+      await latestPoll.promise;
+      firstPoll.resolve({ ...tagMemo, body: "古い外部更新", revision: "tag-r2" });
+      await firstPoll.promise;
+    });
+
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".tag-memo-editor .cm-editor")!);
+    expect(view?.state.doc.toString()).toBe("最新の外部更新");
+    expect(api.saveTagMemo).not.toHaveBeenCalled();
+  });
+
+  it("関連メモの読込中は編集できず失敗時はタグページに留まる", async () => {
+    const destination = deferred<NoteDocument>();
+    const connected = { ...nextSummary, id: "connected.txt", title: "関連先" };
+    vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
+    vi.mocked(api.listNotes).mockResolvedValue([summary]);
+    vi.mocked(api.readNote).mockResolvedValueOnce(document).mockReturnValueOnce(destination.promise);
+    vi.mocked(api.searchTag).mockResolvedValue([connected]);
+    vi.mocked(api.readTagMemo).mockResolvedValue(tagMemo);
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
+    await waitFor(() => {
+      expect(container.querySelector(".cm-zettel-tag")).not.toBeNull();
+    });
+    fireEvent.mouseDown(container.querySelector(".cm-zettel-tag")!);
+    await screen.findByRole("button", { name: /関連先/u });
+    await waitFor(() => {
+      expect(container.querySelector(".tag-memo-editor .cm-editor")).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /関連先/u }));
+
+    await expect(screen.findByText("移動先を読み込み中…")).resolves.toBeInTheDocument();
+    expect(container.querySelector(".tag-memo-editor .cm-editor")).toBeNull();
+    await act(async () => {
+      destination.reject(new Error("destination read failed"));
+      await destination.promise.catch(() => null);
+    });
+    await expect(screen.findByText("Error: destination read failed")).resolves.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "#りんご" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelector(".tag-memo-editor .cm-editor")).not.toBeNull();
+    });
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".tag-memo-editor .cm-editor")!);
+    expect({ body: view?.state.doc.toString(), saveCalls: vi.mocked(api.saveTagMemo).mock.calls }).toStrictEqual({
+      body: tagMemo.body,
+      saveCalls: [],
+    });
+  });
+
+  it("関連メモより後に選んだsidebarメモだけを開く", async () => {
+    const firstDestination = deferred<NoteDocument>();
+    const latestDestination = deferred<NoteDocument>();
+    const connected = { ...nextSummary, id: "connected.txt", title: "関連先" };
+    const connectedDocument = { ...nextDocument, id: connected.id, title: connected.title };
+    vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
+    vi.mocked(api.listNotes).mockResolvedValue([summary, nextSummary]);
+    vi.mocked(api.readNote)
+      .mockResolvedValueOnce(document)
+      .mockReturnValueOnce(firstDestination.promise)
+      .mockReturnValueOnce(latestDestination.promise);
+    vi.mocked(api.searchTag).mockResolvedValue([connected]);
+    vi.mocked(api.readTagMemo).mockResolvedValue(tagMemo);
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
+    await waitFor(() => {
+      expect(container.querySelector(".cm-zettel-tag")).not.toBeNull();
+    });
+    fireEvent.mouseDown(container.querySelector(".cm-zettel-tag")!);
+    await screen.findByRole("button", { name: /関連先/u });
+
+    fireEvent.click(screen.getByRole("button", { name: /関連先/u }));
+    fireEvent.click(screen.getByRole("button", { name: /次のメモ/u }));
+
+    expect(api.readNote).toHaveBeenCalledTimes(2);
+    expect(api.readNote).toHaveBeenLastCalledWith(connected.id);
+    await act(async () => {
+      firstDestination.resolve(connectedDocument);
+      await firstDestination.promise;
+    });
+    await waitFor(() => {
+      expect(api.readNote).toHaveBeenNthCalledWith(3, nextDocument.id);
+    });
+    expect(screen.getByRole("heading", { level: 1, name: "#りんご" })).toBeInTheDocument();
+    await act(async () => {
+      latestDestination.resolve(nextDocument);
+      await latestDestination.promise;
+    });
+
+    await expect(screen.findByRole("textbox", { name: "タイトル" })).resolves.toHaveValue(nextDocument.title);
+  });
+
+  it("新規メモ作成中は編集できず失敗時はタグページに留まる", async () => {
+    const creation = deferred<NoteDocument>();
+    vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
+    vi.mocked(api.listNotes).mockResolvedValue([summary]);
+    vi.mocked(api.readNote).mockResolvedValue(document);
+    vi.mocked(api.searchTag).mockResolvedValue([summary]);
+    vi.mocked(api.readTagMemo).mockResolvedValue(tagMemo);
+    vi.mocked(api.createNote).mockReturnValue(creation.promise);
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
+    await waitFor(() => {
+      expect(container.querySelector(".cm-zettel-tag")).not.toBeNull();
+    });
+    fireEvent.mouseDown(container.querySelector(".cm-zettel-tag")!);
+    await waitFor(() => {
+      expect(container.querySelector(".tag-memo-editor .cm-editor")).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /新しいメモ/u }));
+
+    await expect(screen.findByText("移動先を読み込み中…")).resolves.toBeInTheDocument();
+    await act(async () => {
+      creation.reject(new Error("create failed"));
+      await creation.promise.catch(() => null);
+    });
+    await expect(screen.findByText("Error: create failed")).resolves.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "#りんご" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelector(".tag-memo-editor .cm-editor")).not.toBeNull();
+    });
+    expect(api.saveTagMemo).not.toHaveBeenCalled();
+  });
+
+  it("保存先変更失敗時はタグページに留まる", async () => {
+    const vaultChange = deferred<void>();
+    vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
+    vi.mocked(api.listNotes).mockResolvedValue([summary]);
+    vi.mocked(api.readNote).mockResolvedValue(document);
+    vi.mocked(api.searchTag).mockResolvedValue([summary]);
+    vi.mocked(api.readTagMemo).mockResolvedValue(tagMemo);
+    vi.mocked(api.chooseVault).mockResolvedValue("/tmp/other");
+    vi.mocked(api.setVault).mockReturnValue(vaultChange.promise);
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
+    await waitFor(() => {
+      expect(container.querySelector(".cm-zettel-tag")).not.toBeNull();
+    });
+    fireEvent.mouseDown(container.querySelector(".cm-zettel-tag")!);
+    await waitFor(() => {
+      expect(container.querySelector(".tag-memo-editor .cm-editor")).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByTitle("保存先を変更"));
+
+    await expect(screen.findByText("移動先を読み込み中…")).resolves.toBeInTheDocument();
+    await act(async () => {
+      vaultChange.reject(new Error("vault change failed"));
+      await vaultChange.promise.catch(() => null);
+    });
+    await expect(screen.findByText("Error: vault change failed")).resolves.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "#りんご" })).toBeInTheDocument();
+    expect(screen.getByTitle("保存先を変更")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelector(".tag-memo-editor .cm-editor")).not.toBeNull();
+    });
   });
 
   it("通常メモを700ms後に保存する", async () => {

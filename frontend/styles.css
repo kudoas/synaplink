@@ -71,6 +71,7 @@ button { color: inherit; }
 .title-input { width: 100%; margin-top: 48px; padding: 0 4px 16px; border: 0; outline: 0; background: transparent; color: var(--ink); font: 600 clamp(27px, 3.3vw, 40px)/1.3 var(--font-display); }
 .title-input::placeholder { color: #bbb4a8; }
 .memo-editor { flex: 1; min-height: 0; overflow: hidden; font-size: 16px; }
+.document-transition { margin: 72px auto; color: var(--muted); font-size: 12px; }
 
 .connections-panel { padding: 72px 18px 24px; border-left: 1px solid var(--line); background: #f5f0e7; }
 .eyebrow { color: var(--accent); font-size: 9px; font-weight: 600; letter-spacing: .18em; }
@@ -97,6 +98,8 @@ button { color: inherit; }
 .tag-memo-editor { min-height: 180px; margin-bottom: 24px; border-bottom: 1px solid var(--line); }
 .tag-memo-editor .memo-editor { min-height: 180px; }
 .tag-memo-loading { padding: 28px 4px; color: var(--muted); font-size: 12px; }
+.tag-memo-loading.error, .tag-memo-state.error { color: var(--accent); }
+.tag-memo-state { color: var(--muted); font-size: 11px; }
 .connected-notes-page .result-grid { padding-bottom: 40px; }
 .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 13px; }
 .result-card { min-height: 165px; padding: 19px; border: 1px solid var(--line); border-radius: 10px; background: #fffdfa; cursor: pointer; text-align: left; transition: transform .15s, box-shadow .15s; }

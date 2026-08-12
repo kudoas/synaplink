@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { ConnectedNotesPage } from "./components/ConnectedNotesPage";
+import { ConnectedNotesPage, type TagMemoState } from "./components/ConnectedNotesPage";
 import { DocumentEditor } from "./components/DocumentEditor";
 import { EditConflictDialog } from "./components/EditConflictDialog";
 import { SaveStatus } from "./components/SaveStatus";
@@ -13,9 +13,12 @@ export function App() {
   const [notes, setNotes] = useState<NoteSummary[]>([]);
   const [search, setSearch] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [tagMemoState, setTagMemoState] = useState<TagMemoState>("loading");
   const [tagResults, setTagResults] = useState<NoteSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const externalReadGeneration = useRef(0);
+  const editorNavigationGeneration = useRef(0);
+  const tagMemoReadGeneration = useRef(0);
   const tagRequest = useRef(0);
 
   const loadNotes = useCallback(async () => {
@@ -60,6 +63,7 @@ export function App() {
     conflict,
     document: draft,
     edit,
+    isNavigating: isNoteNavigating,
     load,
     overwriteConflict,
     requestNavigation,
@@ -72,6 +76,7 @@ export function App() {
     conflict: tagMemoConflict,
     document: tagMemo,
     edit: editTagMemo,
+    isNavigating: isTagMemoNavigating,
     load: loadTagMemo,
     overwriteConflict: overwriteTagMemoConflict,
     requestNavigation: requestTagMemoNavigation,
@@ -160,19 +165,22 @@ export function App() {
   }, [draft, notes, saveState, synchronize]);
 
   useEffect(() => {
-    if (!activeTag || tagMemoSaveState !== "saved") {
+    if (!activeTag || tagMemoSaveState !== "saved" || tagMemoState !== "ready") {
       return;
     }
     const interval = window.setInterval(() => {
       const request = tagRequest.current;
+      const memoRead = tagMemoReadGeneration.current + 1;
+      tagMemoReadGeneration.current = memoRead;
       void (async () => {
         try {
           const memo = await api.readTagMemo(activeTag);
-          if (tagRequest.current === request) {
+          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
             synchronizeTagMemo(memo);
           }
         } catch (error) {
-          if (tagRequest.current === request) {
+          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
+            setTagMemoState("error");
             setError(String(error));
           }
         }
@@ -181,7 +189,7 @@ export function App() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [activeTag, synchronizeTagMemo, tagMemoSaveState]);
+  }, [activeTag, synchronizeTagMemo, tagMemoSaveState, tagMemoState]);
 
   const visibleNotes = useMemo(() => {
     const query = search.trim().normalize("NFKC").toLocaleLowerCase();
@@ -200,10 +208,14 @@ export function App() {
   const tags = useMemo(() => uniqueTags(draft?.body ?? ""), [draft?.body]);
 
   const requestEditorNavigation = useCallback(
-    (action: () => void) => {
+    (action: (isCurrent: () => boolean) => void | Promise<void>) => {
+      const generation = editorNavigationGeneration.current + 1;
+      editorNavigationGeneration.current = generation;
       invalidateExternalRead();
       const navigate = activeTag ? requestTagMemoNavigation : requestNavigation;
-      void navigate(action);
+      void navigate(async () => {
+        await action(() => editorNavigationGeneration.current === generation);
+      });
     },
     [activeTag, invalidateExternalRead, requestNavigation, requestTagMemoNavigation],
   );
@@ -211,8 +223,11 @@ export function App() {
   const loadTagPage = useCallback(
     (tag: string) => {
       const request = tagRequest.current + 1;
+      const memoRead = tagMemoReadGeneration.current + 1;
       tagRequest.current = request;
+      tagMemoReadGeneration.current = memoRead;
       setActiveTag(tag);
+      setTagMemoState("loading");
       setTagResults([]);
       loadTagMemo(null);
       void (async () => {
@@ -230,11 +245,13 @@ export function App() {
       void (async () => {
         try {
           const memo = await api.readTagMemo(tag);
-          if (tagRequest.current === request) {
+          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
             loadTagMemo(memo);
+            setTagMemoState("ready");
           }
         } catch (error) {
-          if (tagRequest.current === request) {
+          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
+            setTagMemoState("error");
             setError(String(error));
           }
         }
@@ -243,64 +260,79 @@ export function App() {
     [loadTagMemo],
   );
 
+  const closeTagPage = useCallback(() => {
+    tagRequest.current += 1;
+    tagMemoReadGeneration.current += 1;
+    setActiveTag(null);
+    setTagMemoState("loading");
+    setTagResults([]);
+    loadTagMemo(null);
+  }, [loadTagMemo]);
+
   const chooseVault = () => {
-    requestEditorNavigation(() => {
-      void (async () => {
-        try {
-          const selected = await api.chooseVault();
-          if (!selected) {
-            return;
-          }
-          await api.setVault(selected);
-          setVault(selected);
-          loadDocument(null);
-          tagRequest.current += 1;
-          setActiveTag(null);
-          loadTagMemo(null);
-          await refreshNotes();
-        } catch (error) {
-          setError(String(error));
+    requestEditorNavigation(async (isCurrent) => {
+      const selected = await api.chooseVault();
+      if (!selected || !isCurrent()) {
+        return;
+      }
+      await api.setVault(selected);
+      if (!isCurrent()) {
+        if (vault) {
+          await api.setVault(vault);
         }
-      })();
+        return;
+      }
+      const selectedNotes = await api.listNotes().catch(async (error: unknown) => {
+        if (vault) {
+          await api.setVault(vault);
+        }
+        throw error;
+      });
+      if (!isCurrent()) {
+        if (vault) {
+          await api.setVault(vault);
+        }
+        return;
+      }
+      setVault(selected);
+      setNotes(selectedNotes);
+      loadDocument(null);
+      closeTagPage();
     });
   };
 
   const openNote = (id: string) => {
-    requestEditorNavigation(() => {
-      void (async () => {
-        try {
-          const note = await api.readNote(id);
-          loadDocument(note);
-          tagRequest.current += 1;
-          setActiveTag(null);
-          loadTagMemo(null);
-        } catch (error) {
-          setError(String(error));
-        }
-      })();
+    requestEditorNavigation(async (isCurrent) => {
+      const note = await api.readNote(id);
+      if (!isCurrent()) {
+        return;
+      }
+      loadDocument(note);
+      closeTagPage();
     });
   };
 
   const createNote = () => {
-    requestEditorNavigation(() => {
-      void (async () => {
-        try {
-          const note = await api.createNote();
-          loadDocument(note);
-          tagRequest.current += 1;
-          setActiveTag(null);
-          loadTagMemo(null);
-          await refreshNotes();
-        } catch (error) {
-          setError(String(error));
-        }
-      })();
+    requestEditorNavigation(async (isCurrent) => {
+      const note = await api.createNote();
+      if (!isCurrent()) {
+        return;
+      }
+      const latestNotes = await api.listNotes();
+      if (!isCurrent()) {
+        return;
+      }
+      setNotes(latestNotes);
+      loadDocument(note);
+      closeTagPage();
     });
   };
 
   const openTag = (tag: string) => {
-    requestEditorNavigation(() => {
-      loadTagPage(tag);
+    requestEditorNavigation((isCurrent) => {
+      if (isCurrent()) {
+        loadTagPage(tag);
+      }
     });
   };
 
@@ -309,16 +341,17 @@ export function App() {
       return;
     }
     const noteId = draft.id;
-    requestEditorNavigation(() => {
-      void (async () => {
-        try {
-          await api.deleteNote(noteId);
-          loadDocument(null);
-          await refreshNotes();
-        } catch (error) {
-          setError(String(error));
-        }
-      })();
+    requestEditorNavigation(async (isCurrent) => {
+      await api.deleteNote(noteId);
+      if (!isCurrent()) {
+        return;
+      }
+      const latestNotes = await api.listNotes();
+      if (!isCurrent()) {
+        return;
+      }
+      loadDocument(null);
+      setNotes(latestNotes);
     });
   };
 
@@ -387,15 +420,17 @@ export function App() {
 
       {activeTag ? (
         <ConnectedNotesPage
+          isNavigating={isTagMemoNavigating}
           memo={tagMemo}
+          memoState={tagMemoState}
           tag={activeTag}
           notes={tagResults}
           saveState={tagMemoSaveState}
           onBack={() => {
-            requestEditorNavigation(() => {
-              tagRequest.current += 1;
-              setActiveTag(null);
-              loadTagMemo(null);
+            requestEditorNavigation((isCurrent) => {
+              if (isCurrent()) {
+                closeTagPage();
+              }
             });
           }}
           onBodyChange={(body) => {
@@ -408,21 +443,25 @@ export function App() {
         <main className="document-view">
           <header className="document-toolbar">
             <SaveStatus state={saveState} />
-            <button className="delete-button" onClick={removeNote}>
+            <button className="delete-button" disabled={isNoteNavigating} onClick={removeNote}>
               ゴミ箱へ
             </button>
           </header>
-          <DocumentEditor
-            body={draft.body}
-            onBodyChange={(body) => {
-              edit((current) => ({ ...current, body }));
-            }}
-            onOpenTag={openTag}
-            onTitleChange={(title) => {
-              edit((current) => ({ ...current, title }));
-            }}
-            title={draft.title}
-          />
+          {isNoteNavigating ? (
+            <p className="document-transition">移動先を読み込み中…</p>
+          ) : (
+            <DocumentEditor
+              body={draft.body}
+              onBodyChange={(body) => {
+                edit((current) => ({ ...current, body }));
+              }}
+              onOpenTag={openTag}
+              onTitleChange={(title) => {
+                edit((current) => ({ ...current, title }));
+              }}
+              title={draft.title}
+            />
+          )}
         </main>
       ) : (
         <main className="empty-view">

@@ -73,6 +73,100 @@ describe(useAutosavedDocument, () => {
     expect(navigate.mock.calls).toStrictEqual([[]]);
   });
 
+  it("非同期遷移中は編集を受け付けず完了まで待つ", async () => {
+    const destination = deferred<void>();
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({
+        mergeSaved: (_local, saved) => saved,
+        onError: vi.fn(),
+        persist: vi.fn(),
+      }),
+    );
+    act(() => {
+      result.current.load({ body: "source", exists: true, revision: "r1" });
+    });
+    let navigation = Promise.resolve();
+    act(() => {
+      navigation = result.current.requestNavigation(async () => destination.promise);
+    });
+
+    expect({ navigating: result.current.isNavigating }).toStrictEqual({ navigating: true });
+    act(() => {
+      result.current.edit((current) => ({ ...current, body: "late edit" }));
+    });
+    expect(result.current.document?.body).toBe("source");
+    let navigationFinished = false;
+    void navigation.then(() => {
+      navigationFinished = true;
+      return null;
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect({ navigationFinished }).toStrictEqual({ navigationFinished: false });
+
+    await act(async () => {
+      destination.resolve();
+      await navigation;
+    });
+    expect({ navigating: result.current.isNavigating }).toStrictEqual({ navigating: false });
+  });
+
+  it("進行中の遷移後に最新の遷移だけをcurrentとして実行する", async () => {
+    const firstDestination = deferred<void>();
+    const latestDestination = deferred<void>();
+    const latestStarted = vi.fn();
+    let firstWasCurrent: boolean | null = null;
+    let latestWasCurrent: boolean | null = null;
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({
+        mergeSaved: (_local, saved) => saved,
+        onError: vi.fn(),
+        persist: vi.fn(),
+      }),
+    );
+    act(() => {
+      result.current.load({ body: "source", exists: true, revision: "r1" });
+    });
+    let navigationGeneration = 0;
+    const requestNavigation = async (navigate: (isCurrent: () => boolean) => Promise<void>) => {
+      const generation = navigationGeneration + 1;
+      navigationGeneration = generation;
+      await result.current.requestNavigation(async () => {
+        await navigate(() => navigationGeneration === generation);
+      });
+    };
+    let firstNavigation = Promise.resolve();
+    let latestNavigation = Promise.resolve();
+    act(() => {
+      firstNavigation = requestNavigation(async (isCurrent) => {
+        await firstDestination.promise;
+        firstWasCurrent = isCurrent();
+      });
+      latestNavigation = requestNavigation(async (isCurrent) => {
+        latestStarted();
+        await latestDestination.promise;
+        latestWasCurrent = isCurrent();
+      });
+    });
+
+    expect(latestStarted).not.toHaveBeenCalled();
+    await act(async () => {
+      firstDestination.resolve();
+      await firstDestination.promise;
+      await Promise.resolve();
+    });
+    expect({ firstWasCurrent, latestStarted: latestStarted.mock.calls }).toStrictEqual({
+      firstWasCurrent: false,
+      latestStarted: [[]],
+    });
+    await act(async () => {
+      latestDestination.resolve();
+      await Promise.all([firstNavigation, latestNavigation]);
+    });
+    expect({ latestWasCurrent }).toStrictEqual({ latestWasCurrent: true });
+  });
+
   it("keeps navigation pending off after a conflict", async () => {
     const navigate = vi.fn();
     const external = { body: "external", exists: true, revision: "r2" };

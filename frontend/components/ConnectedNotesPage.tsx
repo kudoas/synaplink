@@ -3,9 +3,13 @@ import type { SaveState } from "../use-autosaved-document";
 import { MemoEditor } from "./MemoEditor";
 import { SaveStatus } from "./SaveStatus";
 
+export type TagMemoState = "error" | "loading" | "ready";
+
 interface Props {
+  isNavigating: boolean;
   tag: string;
   memo: TagMemoDocument | null;
+  memoState: TagMemoState;
   notes: NoteSummary[];
   saveState: SaveState;
   onBack: () => void;
@@ -14,7 +18,18 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
-export function ConnectedNotesPage({ memo, notes, onBack, onBodyChange, onOpenTag, onSelect, saveState, tag }: Props) {
+export function ConnectedNotesPage({
+  isNavigating,
+  memo,
+  memoState,
+  notes,
+  onBack,
+  onBodyChange,
+  onOpenTag,
+  onSelect,
+  saveState,
+  tag,
+}: Props) {
   return (
     <main className="results-view connected-notes-page">
       <button
@@ -29,11 +44,21 @@ export function ConnectedNotesPage({ memo, notes, onBack, onBodyChange, onOpenTa
         <span className="eyebrow">CONNECTED NOTES</span>
         <div className="tag-memo-title-row">
           <h1>#{tag}</h1>
-          <SaveStatus state={saveState} />
+          {memoState === "ready" ? (
+            <SaveStatus state={saveState} />
+          ) : (
+            <span className={`tag-memo-state ${memoState}`}>
+              {memoState === "error" ? "読み込みエラー" : "読み込み中…"}
+            </span>
+          )}
         </div>
       </header>
       <section className="tag-memo-editor" aria-label={`#${tag} のメモ`}>
-        {memo ? (
+        {isNavigating ? (
+          <p className="tag-memo-loading">移動先を読み込み中…</p>
+        ) : memoState === "error" ? (
+          <p className="tag-memo-loading error">タグメモを読み込めませんでした。</p>
+        ) : memoState === "ready" && memo ? (
           <MemoEditor
             value={memo.body}
             onChange={onBodyChange}
