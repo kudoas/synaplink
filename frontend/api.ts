@@ -1,14 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type {
-  NoteDocument,
-  NoteSummary,
-  SaveNoteInput,
-  SaveResult,
-  SaveTagMemoInput,
-  SaveTagMemoResult,
-  TagMemoDocument,
-} from "./types";
+import type { NoteDocument, NoteSummary, SaveNoteInput, SaveResult } from "./types";
 
 export const api = {
   chooseVault: async () => {
@@ -20,9 +12,6 @@ export const api = {
   getVault: async () => invoke<string | null>("get_vault"),
   listNotes: async () => invoke<NoteSummary[]>("list_notes"),
   readNote: async (id: string) => invoke<NoteDocument>("read_note", { id }),
-  readTagMemo: async (tag: string) => invoke<TagMemoDocument>("read_tag_memo", { tag }),
   saveNote: async (input: SaveNoteInput) => invoke<SaveResult>("save_note", { input }),
-  saveTagMemo: async (input: SaveTagMemoInput) => invoke<SaveTagMemoResult>("save_tag_memo", { input }),
-  searchTag: async (tag: string) => invoke<NoteSummary[]>("search_tag", { tag }),
   setVault: async (path: string) => invoke<void>("set_vault", { path }),
 };

@@ -3,14 +3,14 @@ import { Annotation, EditorState, Prec } from "@codemirror/state";
 import { Decoration, EditorView, keymap, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
-import { parseTags } from "../tag-parser";
+import { parseLinks } from "../link-parser";
 import { parseUrls } from "../url-parser";
 
 interface Props {
   value: string;
   onChange: (value: string) => void;
   onNavigateBackward: () => void;
-  onOpenTag: (tag: string) => void;
+  onOpenLink: (link: string) => void;
   ref?: Ref<MemoEditorHandle>;
 }
 
@@ -22,11 +22,11 @@ function interactiveDecorations(view: EditorView): DecorationSet {
   const content = view.state.doc.toString();
   return Decoration.set(
     [
-      ...parseTags(content).map((tag) =>
+      ...parseLinks(content).map((link) =>
         Decoration.mark({
-          attributes: { "data-tag": tag.displayName, title: "クリックで関連メモを表示" },
-          class: "cm-zettel-tag",
-        }).range(tag.from, tag.to),
+          attributes: { "data-link": link.displayName, title: "クリックして検索" },
+          class: "cm-wikilink",
+        }).range(link.from, link.to),
       ),
       ...parseUrls(content).map((url) =>
         Decoration.mark({
@@ -56,19 +56,19 @@ const interactivePlugin = ViewPlugin.fromClass(
 
 const externalValueSync = Annotation.define<boolean>();
 
-export function MemoEditor({ value, onChange, onNavigateBackward, onOpenTag, ref }: Props) {
+export function MemoEditor({ value, onChange, onNavigateBackward, onOpenLink, ref }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const initialValue = useRef(value);
   const changeHandler = useRef(onChange);
   const navigateBackwardHandler = useRef(onNavigateBackward);
-  const tagHandler = useRef(onOpenTag);
+  const linkHandler = useRef(onOpenLink);
 
   useEffect(() => {
     changeHandler.current = onChange;
     navigateBackwardHandler.current = onNavigateBackward;
-    tagHandler.current = onOpenTag;
-  }, [onChange, onNavigateBackward, onOpenTag]);
+    linkHandler.current = onOpenLink;
+  }, [onChange, onNavigateBackward, onOpenLink]);
 
   useImperativeHandle(ref, () => ({
     focusAtStart() {
@@ -128,7 +128,13 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenTag, ref
               const target = event.target instanceof HTMLElement ? event.target : null;
               const url = target?.closest<HTMLElement>(".cm-zettel-link")?.dataset.url;
               if (!url) {
-                return false;
+                const link = target?.closest<HTMLElement>(".cm-wikilink")?.dataset.link;
+                if (!link) {
+                  return false;
+                }
+                event.preventDefault();
+                linkHandler.current(link);
+                return true;
               }
               event.preventDefault();
               void openUrl(url).catch(() => null);
@@ -140,32 +146,26 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenTag, ref
                 return false;
               }
 
-              const tag = target?.closest<HTMLElement>(".cm-zettel-tag")?.dataset.tag;
-              if (!tag) {
-                return false;
-              }
-              event.preventDefault();
-              tagHandler.current(tag);
-              return true;
+              return false;
             },
           }),
           EditorView.theme({
             "&": { backgroundColor: "transparent", height: "100%" },
-            ".cm-content": { padding: "20px 4px 120px" },
             "&.cm-focused": { outline: "none" },
+            ".cm-content": { padding: "20px 4px 120px" },
             ".cm-gutters": { display: "none" },
             ".cm-scroller": { fontFamily: "var(--font-body)", lineHeight: "1.8" },
+            ".cm-wikilink": {
+              backgroundColor: "var(--accent-soft)",
+              borderRadius: "4px",
+              color: "var(--accent)",
+              cursor: "pointer",
+            },
             ".cm-zettel-link": {
               color: "var(--accent)",
               cursor: "pointer",
               textDecoration: "underline",
               textUnderlineOffset: "3px",
-            },
-            ".cm-zettel-tag": {
-              backgroundColor: "var(--accent-soft)",
-              borderRadius: "4px",
-              color: "var(--accent)",
-              cursor: "pointer",
             },
           }),
         ],
