@@ -5,12 +5,12 @@ import { MemoEditor, type MemoEditorHandle } from "./MemoEditor";
 interface Props {
   body: string;
   onBodyChange: (body: string) => void;
-  onOpenTag: (tag: string) => void;
+  onOpenLink: (link: string) => void;
   onTitleChange: (title: string) => void;
   title: string;
 }
 
-export function DocumentEditor({ body, onBodyChange, onOpenTag, onTitleChange, title }: Props) {
+export function DocumentEditor({ body, onBodyChange, onOpenLink, onTitleChange, title }: Props) {
   const memoEditor = useRef<MemoEditorHandle>(null);
   const titleInput = useRef<HTMLInputElement>(null);
 
@@ -49,7 +49,7 @@ export function DocumentEditor({ body, onBodyChange, onOpenTag, onTitleChange, t
           input.focus();
           input.setSelectionRange(input.value.length, input.value.length);
         }}
-        onOpenTag={onOpenTag}
+        onOpenLink={onOpenLink}
       />
     </div>
   );

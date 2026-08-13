@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { ConnectedNotesPage, type TagMemoState } from "./components/ConnectedNotesPage";
 import { DocumentEditor } from "./components/DocumentEditor";
 import { EditConflictDialog } from "./components/EditConflictDialog";
 import { SaveStatus } from "./components/SaveStatus";
-import { uniqueTags } from "./tag-parser";
-import type { NoteDocument, NoteSummary, TagMemoDocument } from "./types";
+import { filterNotes, findLatestNote } from "./note-search";
+import type { NoteDocument, NoteSummary } from "./types";
 import {
   type AbortedNavigation,
   type NavigationResult,
@@ -16,18 +15,19 @@ export function App() {
   const [vault, setVault] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteSummary[]>([]);
   const [search, setSearch] = useState("");
-  const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [tagMemoState, setTagMemoState] = useState<TagMemoState>("loading");
-  const [tagResults, setTagResults] = useState<NoteSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const externalReadGeneration = useRef(0);
   const editorNavigationGeneration = useRef(0);
-  const tagMemoReadGeneration = useRef(0);
-  const tagRequest = useRef(0);
+  const notesRef = useRef<NoteSummary[]>([]);
+
+  const replaceNotes = useCallback((next: NoteSummary[]) => {
+    notesRef.current = next;
+    setNotes(next);
+  }, []);
 
   const loadNotes = useCallback(async () => {
-    setNotes(await api.listNotes());
-  }, []);
+    replaceNotes(await api.listNotes());
+  }, [replaceNotes]);
 
   const refreshNotes = useCallback(async () => {
     try {
@@ -40,9 +40,9 @@ export function App() {
   const noteAutosave = useAutosavedDocument<NoteDocument>({
     mergeSaved: (local, saved) => ({
       ...local,
+      links: saved.links,
       modifiedAt: saved.modifiedAt,
       revision: saved.revision,
-      tags: saved.tags,
     }),
     onError: (saveError) => {
       setError(String(saveError));
@@ -67,42 +67,13 @@ export function App() {
     conflict,
     document: draft,
     edit,
-    isNavigating: isNoteNavigating,
+    isNavigating,
     load,
     overwriteConflict,
     requestNavigation,
     saveState,
     synchronize,
   } = noteAutosave;
-
-  const {
-    acceptExternal: acceptExternalTagMemo,
-    conflict: tagMemoConflict,
-    document: tagMemo,
-    edit: editTagMemo,
-    isNavigating: isTagMemoNavigating,
-    load: loadTagMemo,
-    overwriteConflict: overwriteTagMemoConflict,
-    requestNavigation: requestTagMemoNavigation,
-    saveState: tagMemoSaveState,
-    synchronize: synchronizeTagMemo,
-  } = useAutosavedDocument<TagMemoDocument>({
-    mergeSaved: (local, saved) => ({ ...local, exists: saved.exists, revision: saved.revision }),
-    onError: (saveError) => {
-      setError(String(saveError));
-    },
-    persist: async (memo, expectedRevision, overwrite) => {
-      const result = await api.saveTagMemo({
-        body: memo.body,
-        expectedRevision,
-        tag: memo.tag,
-        ...(overwrite ? { overwrite: true } : {}),
-      });
-      return result.status === "saved"
-        ? { document: result.memo, status: "saved" }
-        : { current: result.current, status: "conflict" };
-    },
-  });
 
   const invalidateExternalRead = useCallback(() => {
     externalReadGeneration.current += 1;
@@ -122,13 +93,13 @@ export function App() {
         const currentVault = await api.getVault();
         setVault(currentVault);
         if (currentVault) {
-          setNotes(await api.listNotes());
+          replaceNotes(await api.listNotes());
         }
       } catch (error) {
         setError(String(error));
       }
     })();
-  }, []);
+  }, [replaceNotes]);
 
   useEffect(() => {
     if (!vault) {
@@ -168,118 +139,23 @@ export function App() {
     }
   }, [draft, notes, saveState, synchronize]);
 
-  useEffect(() => {
-    if (!activeTag || isTagMemoNavigating || tagMemoSaveState !== "saved" || tagMemoState !== "ready") {
-      return;
-    }
-    const interval = window.setInterval(() => {
-      const request = tagRequest.current;
-      const memoRead = tagMemoReadGeneration.current + 1;
-      tagMemoReadGeneration.current = memoRead;
-      void (async () => {
-        try {
-          const memo = await api.readTagMemo(activeTag);
-          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
-            synchronizeTagMemo(memo);
-          }
-        } catch (error) {
-          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
-            setTagMemoState("error");
-            setError(String(error));
-          }
-        }
-      })();
-    }, 2500);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [activeTag, isTagMemoNavigating, synchronizeTagMemo, tagMemoSaveState, tagMemoState]);
-
-  const visibleNotes = useMemo(() => {
-    const query = search.trim().normalize("NFKC").toLocaleLowerCase();
-    if (!query) {
-      return notes;
-    }
-    return notes.filter((note) =>
-      [note.title, note.preview, ...note.tags.map((tag) => tag.displayName)]
-        .join(" ")
-        .normalize("NFKC")
-        .toLocaleLowerCase()
-        .includes(query),
-    );
-  }, [notes, search]);
-
-  const tags = useMemo(() => uniqueTags(draft?.body ?? ""), [draft?.body]);
+  const visibleNotes = useMemo(() => filterNotes(notes, search), [notes, search]);
 
   const requestEditorNavigation = useCallback(
     (action: (isCurrent: () => boolean) => NavigationResult | Promise<NavigationResult>) => {
       const generation = editorNavigationGeneration.current + 1;
       editorNavigationGeneration.current = generation;
       invalidateExternalRead();
-      const navigate = activeTag ? requestTagMemoNavigation : requestNavigation;
-      void navigate(
+      void requestNavigation(
         (): NavigationResult | Promise<NavigationResult> =>
           action(() => editorNavigationGeneration.current === generation),
       );
     },
-    [activeTag, invalidateExternalRead, requestNavigation, requestTagMemoNavigation],
+    [invalidateExternalRead, requestNavigation],
   );
-
-  const loadTagPage = useCallback(
-    (tag: string) => {
-      const request = tagRequest.current + 1;
-      const memoRead = tagMemoReadGeneration.current + 1;
-      tagRequest.current = request;
-      tagMemoReadGeneration.current = memoRead;
-      setActiveTag(tag);
-      setTagMemoState("loading");
-      setTagResults([]);
-      loadTagMemo(null);
-      void (async () => {
-        try {
-          const results = await api.searchTag(tag);
-          if (tagRequest.current === request) {
-            setTagResults(results);
-          }
-        } catch (error) {
-          if (tagRequest.current === request) {
-            setError(String(error));
-          }
-        }
-      })();
-      void (async () => {
-        try {
-          const memo = await api.readTagMemo(tag);
-          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
-            loadTagMemo(memo);
-            setTagMemoState("ready");
-          }
-        } catch (error) {
-          if (tagRequest.current === request && tagMemoReadGeneration.current === memoRead) {
-            setTagMemoState("error");
-            setError(String(error));
-          }
-        }
-      })();
-    },
-    [loadTagMemo],
-  );
-
-  const closeTagPage = useCallback(() => {
-    tagRequest.current += 1;
-    tagMemoReadGeneration.current += 1;
-    setActiveTag(null);
-    setTagMemoState("loading");
-    setTagResults([]);
-    loadTagMemo(null);
-  }, [loadTagMemo]);
 
   const chooseVault = () => {
     requestEditorNavigation(async (isCurrent) => {
-      if (activeTag) {
-        tagRequest.current += 1;
-        tagMemoReadGeneration.current += 1;
-      }
       const restoreVault = async (): Promise<AbortedNavigation | void> => {
         if (!vault) {
           return;
@@ -312,20 +188,17 @@ export function App() {
         return restoreVault();
       }
       setVault(selected);
-      setNotes(selectedNotes);
+      replaceNotes(selectedNotes);
       loadDocument(null);
-      closeTagPage();
     });
   };
 
   const openNote = (id: string) => {
     requestEditorNavigation(async (isCurrent) => {
       const note = await api.readNote(id);
-      if (!isCurrent()) {
-        return;
+      if (isCurrent()) {
+        loadDocument(note);
       }
-      loadDocument(note);
-      closeTagPage();
     });
   };
 
@@ -339,16 +212,24 @@ export function App() {
       if (!isCurrent()) {
         return;
       }
-      setNotes(latestNotes);
+      replaceNotes(latestNotes);
       loadDocument(note);
-      closeTagPage();
     });
   };
 
-  const openTag = (tag: string) => {
-    requestEditorNavigation((isCurrent) => {
+  const openLink = (link: string) => {
+    requestEditorNavigation(async (isCurrent) => {
+      if (!isCurrent()) {
+        return;
+      }
+      setSearch(link);
+      const latest = findLatestNote(filterNotes(notesRef.current, link));
+      if (!latest || latest.id === draft?.id) {
+        return;
+      }
+      const note = await api.readNote(latest.id);
       if (isCurrent()) {
-        loadTagPage(tag);
+        loadDocument(note);
       }
     });
   };
@@ -368,7 +249,7 @@ export function App() {
         return;
       }
       loadDocument(null);
-      setNotes(latestNotes);
+      replaceNotes(latestNotes);
     });
   };
 
@@ -379,7 +260,7 @@ export function App() {
           <div className="brand-mark">Z</div>
           <span className="eyebrow">LOCAL-FIRST NOTES</span>
           <h1>考えを、つなげる。</h1>
-          <p>プレーンテキストと #タグだけの、静かなツェッテルカステン。</p>
+          <p>プレーンテキストと [[リンク]] だけの、静かなツェッテルカステン。</p>
           <button className="primary-button" onClick={chooseVault}>
             メモの保存先を選ぶ
           </button>
@@ -435,36 +316,15 @@ export function App() {
         </footer>
       </aside>
 
-      {activeTag ? (
-        <ConnectedNotesPage
-          isNavigating={isTagMemoNavigating}
-          memo={tagMemo}
-          memoState={tagMemoState}
-          tag={activeTag}
-          notes={tagResults}
-          saveState={tagMemoSaveState}
-          onBack={() => {
-            requestEditorNavigation((isCurrent) => {
-              if (isCurrent()) {
-                closeTagPage();
-              }
-            });
-          }}
-          onBodyChange={(body) => {
-            editTagMemo((current) => ({ ...current, body }));
-          }}
-          onOpenTag={openTag}
-          onSelect={openNote}
-        />
-      ) : draft ? (
+      {draft ? (
         <main className="document-view">
           <header className="document-toolbar">
             <SaveStatus state={saveState} />
-            <button className="delete-button" disabled={isNoteNavigating} onClick={removeNote}>
+            <button className="delete-button" disabled={isNavigating} onClick={removeNote}>
               ゴミ箱へ
             </button>
           </header>
-          {isNoteNavigating ? (
+          {isNavigating ? (
             <p className="document-transition">移動先を読み込み中…</p>
           ) : (
             <DocumentEditor
@@ -472,7 +332,7 @@ export function App() {
               onBodyChange={(body) => {
                 edit((current) => ({ ...current, body }));
               }}
-              onOpenTag={openTag}
+              onOpenLink={openLink}
               onTitleChange={(title) => {
                 edit((current) => ({ ...current, title }));
               }}
@@ -490,36 +350,11 @@ export function App() {
         </main>
       )}
 
-      <aside className="connections-panel">
-        <span className="eyebrow">CONNECTIONS</span>
-        <h2>このメモのタグ</h2>
-        <div className="tag-list">
-          {tags.map((tag) => (
-            <button
-              key={tag.normalizedName}
-              onClick={() => {
-                openTag(tag.displayName);
-              }}
-            >
-              #{tag.displayName}
-              <span>→</span>
-            </button>
-          ))}
-          {tags.length === 0 && <p>#タグを書くと、関連するメモがここに現れます。</p>}
-        </div>
-        <div className="hint-card">
-          <strong>ヒント</strong>
-          <p>
-            本文に <code>#りんご</code> のように書くと、メモ同士がつながります。
-          </p>
-        </div>
-      </aside>
-
-      {(activeTag ? tagMemoConflict : conflict) && (
+      {conflict && (
         <EditConflictDialog
-          onAcceptExternal={activeTag ? acceptExternalTagMemo : acceptExternal}
+          onAcceptExternal={acceptExternal}
           onOverwrite={() => {
-            void (activeTag ? overwriteTagMemoConflict() : overwriteConflict());
+            void overwriteConflict();
           }}
         />
       )}

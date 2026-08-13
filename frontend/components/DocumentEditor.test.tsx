@@ -11,7 +11,7 @@ describe(DocumentEditor, () => {
       <DocumentEditor
         body="本文"
         onBodyChange={vi.fn()}
-        onOpenTag={vi.fn()}
+        onOpenLink={vi.fn()}
         onTitleChange={vi.fn()}
         title="タイトル"
       />,
@@ -35,7 +35,7 @@ describe(DocumentEditor, () => {
       <DocumentEditor
         body={"一行目\n二行目"}
         onBodyChange={vi.fn()}
-        onOpenTag={vi.fn()}
+        onOpenLink={vi.fn()}
         onTitleChange={vi.fn()}
         title="タイトル"
       />,
@@ -59,7 +59,7 @@ describe(DocumentEditor, () => {
       <DocumentEditor
         body="本文"
         onBodyChange={vi.fn()}
-        onOpenTag={vi.fn()}
+        onOpenLink={vi.fn()}
         onTitleChange={vi.fn()}
         title="タイトル"
       />,
@@ -82,7 +82,7 @@ describe(DocumentEditor, () => {
       <DocumentEditor
         body="本文"
         onBodyChange={vi.fn()}
-        onOpenTag={vi.fn()}
+        onOpenLink={vi.fn()}
         onTitleChange={vi.fn()}
         title="タイトル"
       />,
@@ -102,7 +102,7 @@ describe(DocumentEditor, () => {
       <DocumentEditor
         body="本文"
         onBodyChange={vi.fn()}
-        onOpenTag={vi.fn()}
+        onOpenLink={vi.fn()}
         onTitleChange={vi.fn()}
         title="タイトル"
       />,
@@ -122,7 +122,7 @@ describe(DocumentEditor, () => {
       <DocumentEditor
         body="本文"
         onBodyChange={vi.fn()}
-        onOpenTag={vi.fn()}
+        onOpenLink={vi.fn()}
         onTitleChange={vi.fn()}
         title="タイトル"
       />,
@@ -139,7 +139,7 @@ describe(DocumentEditor, () => {
   it("空のタイトルから本文先頭へ移動する", () => {
     cleanup();
     const { container } = render(
-      <DocumentEditor body="本文" onBodyChange={vi.fn()} onOpenTag={vi.fn()} onTitleChange={vi.fn()} title="" />,
+      <DocumentEditor body="本文" onBodyChange={vi.fn()} onOpenLink={vi.fn()} onTitleChange={vi.fn()} title="" />,
     );
     const title = screen.getByRole<HTMLInputElement>("textbox", { name: "タイトル" });
     const editorElement = container.querySelector<HTMLElement>(".cm-editor");

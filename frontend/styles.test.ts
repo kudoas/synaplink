@@ -24,6 +24,7 @@ function withStyles(test: (propertyFor: (selector: string, property: string) => 
 describe("application layout", () => {
   it("本文とサイドバーのスクロール領域を画面内に制約する", () => {
     withStyles((propertyFor) => {
+      expect(propertyFor(".app-shell", "grid-template-columns")).toBe("272px minmax(430px, 1fr)");
       expect(propertyFor(".app-shell", "grid-template-rows")).toBe("minmax(0, 1fr)");
       expect(propertyFor(".document-body", "overflow-y")).toBe("auto");
     });
