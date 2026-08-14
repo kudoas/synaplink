@@ -131,10 +131,20 @@ const nextSummary: NoteSummary = {
   title: nextDocument.title,
 };
 
-function editBody(container: HTMLElement, body: string) {
-  const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
+async function editBody(container: HTMLElement, body: string) {
+  const view = await vi.waitFor(() => {
+    const editor = container.querySelector<HTMLElement>(".cm-editor");
+    if (!editor) {
+      throw new Error("CodeMirror editor is not ready");
+    }
+    const editorView = EditorView.findFromDOM(editor);
+    if (!editorView) {
+      throw new Error("CodeMirror view is not ready");
+    }
+    return editorView;
+  });
   act(() => {
-    view!.dispatch({ changes: { from: 0, insert: body, to: view!.state.doc.length }, userEvent: "input.type" });
+    view.dispatch({ changes: { from: 0, insert: body, to: view.state.doc.length }, userEvent: "input.type" });
   });
 }
 
@@ -256,7 +266,7 @@ describe(App, () => {
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
     vi.useFakeTimers();
-    editBody(container, "編集後");
+    await editBody(container, "編集後");
 
     await act(async () => vi.advanceTimersByTimeAsync(700));
 
@@ -279,7 +289,7 @@ describe(App, () => {
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
     vi.useFakeTimers();
-    editBody(container, "ローカルの本文");
+    await editBody(container, "ローカルの本文");
     await act(async () => vi.advanceTimersByTimeAsync(700));
     vi.useRealTimers();
 
@@ -307,7 +317,7 @@ describe(App, () => {
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
     vi.useFakeTimers();
-    editBody(container, "ローカルの本文");
+    await editBody(container, "ローカルの本文");
     await act(async () => vi.advanceTimersByTimeAsync(700));
     vi.useRealTimers();
 
@@ -340,7 +350,7 @@ describe(App, () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
-    editBody(container, "移動前の編集");
+    await editBody(container, "移動前の編集");
 
     fireEvent.click(screen.getByRole("button", { name: /次のメモ/u }));
 
@@ -374,7 +384,7 @@ describe(App, () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
-    editBody(container, "移動前の編集");
+    await editBody(container, "移動前の編集");
 
     fireEvent.click(screen.getByRole("button", { name: /次のメモ/u }));
 
@@ -397,7 +407,7 @@ describe(App, () => {
     await waitFor(() => {
       expect(container.querySelector(".document-view .cm-editor")).not.toBeNull();
     });
-    editBody(container, "保存先変更前の編集");
+    await editBody(container, "保存先変更前の編集");
 
     fireEvent.click(screen.getByTitle("保存先を変更"));
 
@@ -430,7 +440,7 @@ describe(App, () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
-    editBody(container, "保存先変更前の編集");
+    await editBody(container, "保存先変更前の編集");
 
     fireEvent.click(screen.getByTitle("保存先を変更"));
 
@@ -448,7 +458,7 @@ describe(App, () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
-    editBody(container, "保存先変更前の編集");
+    await editBody(container, "保存先変更前の編集");
 
     fireEvent.click(screen.getByTitle("保存先を変更"));
 
@@ -500,7 +510,7 @@ describe(App, () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
-    editBody(container, "削除前の編集");
+    await editBody(container, "削除前の編集");
 
     fireEvent.click(screen.getByRole("button", { name: "ゴミ箱へ" }));
 
@@ -528,7 +538,7 @@ describe(App, () => {
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
     vi.useFakeTimers();
-    editBody(container, "保存中の編集");
+    await editBody(container, "保存中の編集");
     await act(async () => vi.advanceTimersByTimeAsync(700));
 
     fireEvent.click(screen.getByRole("button", { name: "ゴミ箱へ" }));
@@ -555,7 +565,7 @@ describe(App, () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
-    editBody(container, "削除前の編集");
+    await editBody(container, "削除前の編集");
 
     fireEvent.click(screen.getByRole("button", { name: "ゴミ箱へ" }));
 
@@ -574,7 +584,7 @@ describe(App, () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
     await screen.findByRole("textbox", { name: "タイトル" });
-    editBody(container, "削除前の編集");
+    await editBody(container, "削除前の編集");
 
     fireEvent.click(screen.getByRole("button", { name: "ゴミ箱へ" }));
 
