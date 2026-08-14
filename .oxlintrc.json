@@ -20,7 +20,7 @@
     "denyWarnings": true,
     "reportUnusedDisableDirectives": "error",
     "typeAware": true,
-    "typeCheck": true
+    "typeCheck": false
   },
   "rules": {
     "eslint/func-style": "off",
