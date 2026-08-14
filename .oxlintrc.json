@@ -34,6 +34,7 @@
     "eslint/no-shadow": "off",
     "eslint/no-ternary": "off",
     "eslint/no-void": "off",
+    "eslint/one-var": ["error", "never"],
     "eslint/require-await": "off",
     "eslint/sort-imports": "off",
     "import/exports-last": "off",
