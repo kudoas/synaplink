@@ -42,9 +42,9 @@ Use `pnpm dev` to start only the web UI. Local file operations require the Tauri
 pnpm lint
 pnpm test
 pnpm build
-cargo fmt --manifest-path backend/Cargo.toml -- --check
-cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path backend/Cargo.toml
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml
 pnpm tauri build --bundles app
 ```
 

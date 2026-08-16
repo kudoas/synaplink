@@ -11,6 +11,6 @@ export default defineConfig({
   test: {
     css: { include: [/styles\.css/u] },
     environment: "jsdom",
-    setupFiles: "./frontend/test/setup.ts",
+    setupFiles: "./src/test/setup.ts",
   },
 });
