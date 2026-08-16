@@ -2,9 +2,9 @@
 
 ## Structure
 
-- `frontend/`: UI built with React, TypeScript, and CodeMirror
-- `backend/`: Local file operations built with Tauri and Rust
-- `dist/` and `backend/target/`: Generated artifacts; do not edit or commit them
+- `src/`: UI built with React, TypeScript, and CodeMirror
+- `src-tauri/`: Desktop host and local file operations built with Tauri and Rust
+- `dist/` and `src-tauri/target/`: Generated artifacts; do not edit or commit them
 
 ## Development
 
@@ -24,9 +24,9 @@ After making changes, run the relevant commands below.
 pnpm lint
 pnpm test
 pnpm build
-cargo fmt --manifest-path backend/Cargo.toml -- --check
-cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path backend/Cargo.toml
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml
 pnpm tauri build --bundles app
 ```
 

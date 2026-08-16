@@ -7,12 +7,12 @@
     "dev": "vite",
     "build": "pnpm typecheck && vite build",
     "build:macos": "pnpm tauri build --bundles app",
-    "lint": "oxlint frontend vite.config.ts",
-    "lint:fix": "oxlint --fix frontend vite.config.ts",
-    "typecheck": "oxlint --type-check -A all -A nursery --report-unused-disable-directives-severity=off frontend vite.config.ts",
+    "lint": "oxlint src vite.config.ts",
+    "lint:fix": "oxlint --fix src vite.config.ts",
+    "typecheck": "oxlint --type-check -A all -A nursery --report-unused-disable-directives-severity=off src vite.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri": "cd backend && tauri"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@codemirror/commands": "6.10.4",

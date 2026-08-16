@@ -17,5 +17,5 @@
     "jsx": "react-jsx",
     "types": ["vitest/globals", "vitest/config"]
   },
-  "include": ["frontend", "vite.config.ts"]
+  "include": ["src", "vite.config.ts"]
 }
