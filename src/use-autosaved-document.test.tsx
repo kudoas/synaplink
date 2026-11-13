@@ -446,6 +446,144 @@ describe(useAutosavedDocument, () => {
     expect(navigate.mock.calls).toStrictEqual([[]]);
   });
 
+  it("saves a later edit after its debounce expires while onSaved is pending", async () => {
+    const refresh = deferred<void>();
+    const onSaved = vi.fn().mockReturnValueOnce(refresh.promise);
+    const persist = vi
+      .fn()
+      .mockResolvedValueOnce({ document: { body: "first", exists: true, revision: "r2" }, status: "saved" })
+      .mockResolvedValueOnce({ document: { body: "second", exists: true, revision: "r3" }, status: "saved" });
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({
+        mergeSaved: (local, saved) => ({ ...local, revision: saved.revision }),
+        onError: vi.fn(),
+        onSaved,
+        persist,
+      }),
+    );
+    act(() => {
+      result.current.load({ body: "old", exists: true, revision: "r1" });
+      result.current.edit((current) => ({ ...current, body: "first" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    act(() => {
+      result.current.edit((current) => ({ ...current, body: "second" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    expect(persist.mock.calls).toStrictEqual([[{ body: "first", exists: true, revision: "r1" }, "r1", false]]);
+
+    await act(async () => {
+      refresh.resolve();
+      await refresh.promise;
+    });
+
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persist).toHaveBeenLastCalledWith({ body: "second", exists: true, revision: "r2" }, "r2", false);
+    expect({ document: result.current.document, saveState: result.current.saveState }).toStrictEqual({
+      document: { body: "second", exists: true, revision: "r3" },
+      saveState: "saved",
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(persist).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the remaining debounce when onSaved finishes before a later edit is due", async () => {
+    const refresh = deferred<void>();
+    const onSaved = vi.fn().mockReturnValueOnce(refresh.promise);
+    const persist = vi
+      .fn()
+      .mockResolvedValueOnce({ document: { body: "first", exists: true, revision: "r2" }, status: "saved" })
+      .mockResolvedValueOnce({ document: { body: "second", exists: true, revision: "r3" }, status: "saved" });
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({
+        mergeSaved: (local, saved) => ({ ...local, revision: saved.revision }),
+        onError: vi.fn(),
+        onSaved,
+        persist,
+      }),
+    );
+    act(() => {
+      result.current.load({ body: "old", exists: true, revision: "r1" });
+      result.current.edit((current) => ({ ...current, body: "first" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    act(() => {
+      result.current.edit((current) => ({ ...current, body: "second" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+      refresh.resolve();
+      await refresh.promise;
+    });
+    expect(persist.mock.calls).toStrictEqual([[{ body: "first", exists: true, revision: "r1" }, "r1", false]]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(349);
+    });
+    expect(persist.mock.calls).toStrictEqual([[{ body: "first", exists: true, revision: "r1" }, "r1", false]]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(result.current.saveState).toBe("saved");
+  });
+
+  it("does not apply an older joined request to an edit whose debounce is still pending", async () => {
+    const refresh = deferred<void>();
+    const onSaved = vi.fn().mockReturnValueOnce(refresh.promise);
+    const persist = vi
+      .fn()
+      .mockResolvedValueOnce({ document: { body: "first", exists: true, revision: "r2" }, status: "saved" })
+      .mockResolvedValueOnce({ document: { body: "third", exists: true, revision: "r3" }, status: "saved" });
+    const { result } = renderHook(() =>
+      useAutosavedDocument<TestDocument>({
+        mergeSaved: (local, saved) => ({ ...local, revision: saved.revision }),
+        onError: vi.fn(),
+        onSaved,
+        persist,
+      }),
+    );
+    act(() => {
+      result.current.load({ body: "old", exists: true, revision: "r1" });
+      result.current.edit((current) => ({ ...current, body: "first" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    act(() => {
+      result.current.edit((current) => ({ ...current, body: "second" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    act(() => {
+      result.current.edit((current) => ({ ...current, body: "third" }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+      refresh.resolve();
+      await refresh.promise;
+    });
+    expect(persist.mock.calls).toStrictEqual([[{ body: "first", exists: true, revision: "r1" }, "r1", false]]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(599);
+    });
+    expect(persist.mock.calls).toStrictEqual([[{ body: "first", exists: true, revision: "r1" }, "r1", false]]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persist).toHaveBeenLastCalledWith({ body: "third", exists: true, revision: "r2" }, "r2", false);
+    expect(result.current.saveState).toBe("saved");
+  });
+
   it("joins an already in-flight save before navigating", async () => {
     const firstSave = deferred<{ document: TestDocument; status: "saved" }>();
     const navigate = vi.fn();
