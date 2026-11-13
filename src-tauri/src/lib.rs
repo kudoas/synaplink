@@ -260,6 +260,11 @@ fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "保存先が不正です".to_string())?;
+    let permissions = match fs::metadata(path) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("メモのアクセス権限を取得できません: {error}")),
+    };
     let temporary = parent.join(format!(
         ".{}.{}.tmp",
         path.file_name().unwrap_or_default().to_string_lossy(),
@@ -271,6 +276,10 @@ fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
             .create_new(true)
             .open(&temporary)
             .map_err(|error| format!("一時ファイルを作成できません: {error}"))?;
+        if let Some(permissions) = permissions {
+            file.set_permissions(permissions)
+                .map_err(|error| format!("メモのアクセス権限を設定できません: {error}"))?;
+        }
         file.write_all(content.as_bytes())
             .and_then(|()| file.sync_all())
             .map_err(|error| format!("メモを書き込めません: {error}"))?;
@@ -516,6 +525,42 @@ mod tests {
         assert_ne!(note.revision, original.revision);
         assert!(note.modified_at > original.modified_at);
         assert_eq!(document_from_path(&path).unwrap().body, "変更後");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserves_existing_permissions_when_saving_changed_content() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        for mode in [0o600, 0o640, 0o444] {
+            let path = directory.path().join(format!("{mode:o}.txt"));
+            atomic_write(&path, "題名\n変更前").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+            let original = document_from_path(&path).unwrap();
+
+            let result = save_note_at_path(
+                &SaveNoteInput {
+                    id: original.id,
+                    title: original.title,
+                    body: "変更後".to_string(),
+                    expected_revision: original.revision,
+                    overwrite: None,
+                },
+                &path,
+            )
+            .unwrap();
+
+            let SaveResult::Saved { note } = result else {
+                panic!("内容変更の保存で競合が返されました");
+            };
+            assert_eq!(note.body, "変更後");
+            assert_eq!(fs::read_to_string(&path).unwrap(), "題名\n変更後");
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                mode
+            );
+        }
     }
 
     #[test]
