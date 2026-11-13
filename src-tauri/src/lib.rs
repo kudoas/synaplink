@@ -78,50 +78,41 @@ fn normalize_link(value: &str) -> String {
 #[must_use]
 pub fn extract_links(content: &str) -> Vec<LinkReference> {
     let mut links = Vec::new();
-    let mut cursor = 0;
 
-    while cursor < content.len().saturating_sub(1) {
-        let Some(relative_start) = content[cursor..].find("[[") else {
-            break;
-        };
-        let start = cursor + relative_start;
+    for line in content.split('\n') {
+        let mut cursor = 0;
+        while cursor < line.len().saturating_sub(1) {
+            let Some(relative_start) = line[cursor..].find("[[") else {
+                break;
+            };
+            let start = cursor + relative_start;
 
-        let escaped = content[..start]
-            .chars()
-            .rev()
-            .take_while(|candidate| *candidate == '\\')
-            .count()
-            % 2
-            == 1;
-        if escaped {
-            cursor = start + 2;
-            continue;
+            let escaped = line[..start]
+                .chars()
+                .rev()
+                .take_while(|candidate| *candidate == '\\')
+                .count()
+                % 2
+                == 1;
+            if escaped {
+                cursor = start + 2;
+                continue;
+            }
+
+            let content_start = start + 2;
+            let Some(relative_closing) = line[content_start..].find("]]") else {
+                break;
+            };
+            let closing = content_start + relative_closing;
+            let display_name = line[content_start..closing].trim().to_string();
+            if !display_name.is_empty() {
+                links.push(LinkReference {
+                    normalized_name: normalize_link(&display_name),
+                    display_name,
+                });
+            }
+            cursor = closing + 2;
         }
-
-        let content_start = start + 2;
-        let line_end = content[content_start..]
-            .find('\n')
-            .map(|offset| content_start + offset);
-        let closing = content[content_start..]
-            .find("]]")
-            .map(|offset| content_start + offset);
-        let Some(closing) = closing else {
-            cursor = line_end.map_or(content.len(), |end| end + 1);
-            continue;
-        };
-        if line_end.is_some_and(|end| end < closing) {
-            cursor = line_end.unwrap_or(content.len()) + 1;
-            continue;
-        }
-
-        let display_name = content[content_start..closing].trim().to_string();
-        if !display_name.is_empty() {
-            links.push(LinkReference {
-                normalized_name: normalize_link(&display_name),
-                display_name,
-            });
-        }
-        cursor = closing + 2;
     }
 
     links
@@ -432,6 +423,40 @@ mod tests {
     #[test]
     fn normalizes_width_and_ascii_case() {
         assert_eq!(normalize_link("ＡＰＰＬＥ"), "apple");
+    }
+
+    #[test]
+    fn extracts_links_after_many_unclosed_lines() {
+        let content = format!(
+            "{}😀 [[ ＡＰＰＬＥ ]]\r\n[[最後]]",
+            "[[未閉鎖\r\n".repeat(80000)
+        );
+        let links = extract_links(&content);
+        assert_eq!(
+            links,
+            vec![
+                LinkReference {
+                    normalized_name: "apple".to_string(),
+                    display_name: "ＡＰＰＬＥ".to_string()
+                },
+                LinkReference {
+                    normalized_name: "最後".to_string(),
+                    display_name: "最後".to_string()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_nested_brackets_escapes_and_trailing_empty_line() {
+        let links = extract_links("\\[[無効]] [[外側 [[内側]] [[次]]\n");
+        assert_eq!(
+            links
+                .iter()
+                .map(|link| link.display_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["外側 [[内側", "次"]
+        );
     }
 
     #[test]
