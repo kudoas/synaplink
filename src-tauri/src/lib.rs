@@ -78,50 +78,41 @@ fn normalize_link(value: &str) -> String {
 #[must_use]
 pub fn extract_links(content: &str) -> Vec<LinkReference> {
     let mut links = Vec::new();
-    let mut cursor = 0;
 
-    while cursor < content.len().saturating_sub(1) {
-        let Some(relative_start) = content[cursor..].find("[[") else {
-            break;
-        };
-        let start = cursor + relative_start;
+    for line in content.split('\n') {
+        let mut cursor = 0;
+        while cursor < line.len().saturating_sub(1) {
+            let Some(relative_start) = line[cursor..].find("[[") else {
+                break;
+            };
+            let start = cursor + relative_start;
 
-        let escaped = content[..start]
-            .chars()
-            .rev()
-            .take_while(|candidate| *candidate == '\\')
-            .count()
-            % 2
-            == 1;
-        if escaped {
-            cursor = start + 2;
-            continue;
+            let escaped = line[..start]
+                .chars()
+                .rev()
+                .take_while(|candidate| *candidate == '\\')
+                .count()
+                % 2
+                == 1;
+            if escaped {
+                cursor = start + 2;
+                continue;
+            }
+
+            let content_start = start + 2;
+            let Some(relative_closing) = line[content_start..].find("]]") else {
+                break;
+            };
+            let closing = content_start + relative_closing;
+            let display_name = line[content_start..closing].trim().to_string();
+            if !display_name.is_empty() {
+                links.push(LinkReference {
+                    normalized_name: normalize_link(&display_name),
+                    display_name,
+                });
+            }
+            cursor = closing + 2;
         }
-
-        let content_start = start + 2;
-        let line_end = content[content_start..]
-            .find('\n')
-            .map(|offset| content_start + offset);
-        let closing = content[content_start..]
-            .find("]]")
-            .map(|offset| content_start + offset);
-        let Some(closing) = closing else {
-            cursor = line_end.map_or(content.len(), |end| end + 1);
-            continue;
-        };
-        if line_end.is_some_and(|end| end < closing) {
-            cursor = line_end.unwrap_or(content.len()) + 1;
-            continue;
-        }
-
-        let display_name = content[content_start..closing].trim().to_string();
-        if !display_name.is_empty() {
-            links.push(LinkReference {
-                normalized_name: normalize_link(&display_name),
-                display_name,
-            });
-        }
-        cursor = closing + 2;
     }
 
     links
@@ -260,6 +251,11 @@ fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "保存先が不正です".to_string())?;
+    let permissions = match fs::metadata(path) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("メモのアクセス権限を取得できません: {error}")),
+    };
     let temporary = parent.join(format!(
         ".{}.{}.tmp",
         path.file_name().unwrap_or_default().to_string_lossy(),
@@ -271,6 +267,10 @@ fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
             .create_new(true)
             .open(&temporary)
             .map_err(|error| format!("一時ファイルを作成できません: {error}"))?;
+        if let Some(permissions) = permissions {
+            file.set_permissions(permissions)
+                .map_err(|error| format!("メモのアクセス権限を設定できません: {error}"))?;
+        }
         file.write_all(content.as_bytes())
             .and_then(|()| file.sync_all())
             .map_err(|error| format!("メモを書き込めません: {error}"))?;
@@ -426,6 +426,40 @@ mod tests {
     }
 
     #[test]
+    fn extracts_links_after_many_unclosed_lines() {
+        let content = format!(
+            "{}😀 [[ ＡＰＰＬＥ ]]\r\n[[最後]]",
+            "[[未閉鎖\r\n".repeat(80000)
+        );
+        let links = extract_links(&content);
+        assert_eq!(
+            links,
+            vec![
+                LinkReference {
+                    normalized_name: "apple".to_string(),
+                    display_name: "ＡＰＰＬＥ".to_string()
+                },
+                LinkReference {
+                    normalized_name: "最後".to_string(),
+                    display_name: "最後".to_string()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_nested_brackets_escapes_and_trailing_empty_line() {
+        let links = extract_links("\\[[無効]] [[外側 [[内側]] [[次]]\n");
+        assert_eq!(
+            links
+                .iter()
+                .map(|link| link.display_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["外側 [[内側", "次"]
+        );
+    }
+
+    #[test]
     fn writes_and_reads_a_plain_text_document() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("note.txt");
@@ -516,6 +550,42 @@ mod tests {
         assert_ne!(note.revision, original.revision);
         assert!(note.modified_at > original.modified_at);
         assert_eq!(document_from_path(&path).unwrap().body, "変更後");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserves_existing_permissions_when_saving_changed_content() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        for mode in [0o600, 0o640, 0o444] {
+            let path = directory.path().join(format!("{mode:o}.txt"));
+            atomic_write(&path, "題名\n変更前").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+            let original = document_from_path(&path).unwrap();
+
+            let result = save_note_at_path(
+                &SaveNoteInput {
+                    id: original.id,
+                    title: original.title,
+                    body: "変更後".to_string(),
+                    expected_revision: original.revision,
+                    overwrite: None,
+                },
+                &path,
+            )
+            .unwrap();
+
+            let SaveResult::Saved { note } = result else {
+                panic!("内容変更の保存で競合が返されました");
+            };
+            assert_eq!(note.body, "変更後");
+            assert_eq!(fs::read_to_string(&path).unwrap(), "題名\n変更後");
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                mode
+            );
+        }
     }
 
     #[test]
