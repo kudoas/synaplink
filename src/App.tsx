@@ -19,6 +19,9 @@ export function App() {
   const externalReadGeneration = useRef(0);
   const editorNavigationGeneration = useRef(0);
   const notesRef = useRef<NoteSummary[]>([]);
+  const notesScope = useRef({ isChangingVault: false });
+  const notesRequestGeneration = useRef(0);
+  const appliedNotesRequestGeneration = useRef(0);
 
   const replaceNotes = useCallback((next: NoteSummary[]) => {
     notesRef.current = next;
@@ -26,10 +29,29 @@ export function App() {
   }, []);
 
   const loadNotes = useCallback(async () => {
-    replaceNotes(await api.listNotes());
+    const scope = notesScope.current;
+    if (scope.isChangingVault) {
+      throw new Error("保存先の変更中は一覧を取得できません");
+    }
+    const generation = notesRequestGeneration.current + 1;
+    notesRequestGeneration.current = generation;
+    try {
+      const next = await api.listNotes();
+      if (notesScope.current === scope && generation >= appliedNotesRequestGeneration.current) {
+        appliedNotesRequestGeneration.current = generation;
+        replaceNotes(next);
+      }
+    } catch (error) {
+      if (notesScope.current === scope && generation >= appliedNotesRequestGeneration.current) {
+        throw error;
+      }
+    }
   }, [replaceNotes]);
 
   const refreshNotes = useCallback(async () => {
+    if (notesScope.current.isChangingVault) {
+      return;
+    }
     try {
       await loadNotes();
     } catch (error) {
@@ -88,18 +110,24 @@ export function App() {
   );
 
   useEffect(() => {
+    const scope = notesScope.current;
     void (async () => {
       try {
         const currentVault = await api.getVault();
+        if (notesScope.current !== scope) {
+          return;
+        }
         setVault(currentVault);
         if (currentVault) {
-          replaceNotes(await api.listNotes());
+          await loadNotes();
         }
       } catch (error) {
-        setError(String(error));
+        if (notesScope.current === scope) {
+          setError(String(error));
+        }
       }
     })();
-  }, [replaceNotes]);
+  }, [loadNotes]);
 
   useEffect(() => {
     if (!vault) {
@@ -156,40 +184,58 @@ export function App() {
 
   const chooseVault = () => {
     requestEditorNavigation(async (isCurrent) => {
+      let canRefresh = true;
+      const abandonVault = (failure: unknown): AbortedNavigation => {
+        canRefresh = false;
+        setVault(null);
+        replaceNotes([]);
+        loadDocument(null);
+        return {
+          error: `保存先を確認できないため、保存先を選び直してください。${String(failure)}`,
+          status: "abort",
+        };
+      };
       const restoreVault = async (): Promise<AbortedNavigation | void> => {
         if (!vault) {
-          return;
+          return abandonVault("元の保存先がありません");
         }
         try {
           await api.setVault(vault);
         } catch (rollbackError) {
-          return { error: rollbackError, status: "abort" };
+          return abandonVault(rollbackError);
         }
       };
       const selected = await api.chooseVault();
       if (!selected || !isCurrent()) {
         return;
       }
-      await api.setVault(selected);
-      if (!isCurrent()) {
-        return restoreVault();
-      }
-      const selectedNotes = await api.listNotes().catch(async (error: unknown) => {
-        const abort = await restoreVault();
-        if (abort) {
-          return abort;
+      // Invalidate old reads and pause polling until the backend vault is settled.
+      notesScope.current = { isChangingVault: true };
+      try {
+        await api.setVault(selected);
+        if (!isCurrent()) {
+          return await restoreVault();
         }
-        throw error;
-      });
-      if (!Array.isArray(selectedNotes)) {
-        return selectedNotes;
+        const selectedNotes = await api.listNotes().catch(async (error: unknown) => {
+          const abort = await restoreVault();
+          if (abort) {
+            return abort;
+          }
+          throw error;
+        });
+        if (!Array.isArray(selectedNotes)) {
+          return selectedNotes;
+        }
+        if (!isCurrent()) {
+          return await restoreVault();
+        }
+        setVault(selected);
+        replaceNotes(selectedNotes);
+        loadDocument(null);
+        setError(null);
+      } finally {
+        notesScope.current = { isChangingVault: !canRefresh };
       }
-      if (!isCurrent()) {
-        return restoreVault();
-      }
-      setVault(selected);
-      replaceNotes(selectedNotes);
-      loadDocument(null);
     });
   };
 
@@ -208,11 +254,10 @@ export function App() {
       if (!isCurrent()) {
         return;
       }
-      const latestNotes = await api.listNotes();
+      await loadNotes();
       if (!isCurrent()) {
         return;
       }
-      replaceNotes(latestNotes);
       loadDocument(note);
     });
   };
@@ -244,12 +289,11 @@ export function App() {
       if (!isCurrent()) {
         return;
       }
-      const latestNotes = await api.listNotes();
+      await loadNotes();
       if (!isCurrent()) {
         return;
       }
       loadDocument(null);
-      replaceNotes(latestNotes);
     });
   };
 
