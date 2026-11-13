@@ -11,40 +11,42 @@ export function normalizeLink(value: string): string {
 
 export function parseLinks(content: string): LinkOccurrence[] {
   const links: LinkOccurrence[] = [];
-  let cursor = 0;
+  let lineOffset = 0;
 
-  while (cursor < content.length - 1) {
-    const from = content.indexOf("[[", cursor);
-    if (from === -1) {
-      break;
-    }
+  for (const line of content.split("\n")) {
+    let cursor = 0;
+    while (cursor < line.length - 1) {
+      const from = line.indexOf("[[", cursor);
+      if (from === -1) {
+        break;
+      }
 
-    let slashCount = 0;
-    for (let previous = from - 1; previous >= 0 && content[previous] === "\\"; previous -= 1) {
-      slashCount += 1;
-    }
-    if (slashCount % 2 === 1) {
-      cursor = from + 2;
-      continue;
-    }
+      let slashCount = 0;
+      for (let previous = from - 1; previous >= 0 && line[previous] === "\\"; previous -= 1) {
+        slashCount += 1;
+      }
+      if (slashCount % 2 === 1) {
+        cursor = from + 2;
+        continue;
+      }
 
-    const lineEnd = content.indexOf("\n", from + 2);
-    const toStart = content.indexOf("]]", from + 2);
-    if (toStart === -1 || (lineEnd !== -1 && lineEnd < toStart)) {
-      cursor = lineEnd === -1 ? content.length : lineEnd + 1;
-      continue;
-    }
+      const toStart = line.indexOf("]]", from + 2);
+      if (toStart === -1) {
+        break;
+      }
 
-    const displayName = content.slice(from + 2, toStart).trim();
-    if (displayName) {
-      links.push({
-        displayName,
-        from,
-        normalizedName: normalizeLink(displayName),
-        to: toStart + 2,
-      });
+      const displayName = line.slice(from + 2, toStart).trim();
+      if (displayName) {
+        links.push({
+          displayName,
+          from: lineOffset + from,
+          normalizedName: normalizeLink(displayName),
+          to: lineOffset + toStart + 2,
+        });
+      }
+      cursor = toStart + 2;
     }
-    cursor = toStart + 2;
+    lineOffset += line.length + 1;
   }
 
   return links;
