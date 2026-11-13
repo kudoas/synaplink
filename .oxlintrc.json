@@ -50,6 +50,7 @@
     "promise/prefer-await-to-callbacks": "off",
     "promise/prefer-await-to-then": "off",
     "react/button-has-type": "off",
+    "react/todo": "off",
     "react/jsx-filename-extension": "off",
     "react/jsx-max-depth": "off",
     "react/jsx-no-literals": "off",
