@@ -93,6 +93,12 @@ async function openSource() {
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: /リンク元/u }));
   await screen.findByDisplayValue("リンク元");
+  await vi.waitFor(() => {
+    const editor = document.querySelector<HTMLElement>(".cm-editor");
+    if (!editor || !EditorView.findFromDOM(editor)) {
+      throw new Error("CodeMirror view is not ready");
+    }
+  });
 }
 
 
@@ -692,6 +698,147 @@ describe(App, () => {
     await expect(screen.findByText("Error: save failed")).resolves.toBeInTheDocument();
     expect(api.chooseVault).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
+  });
+
+  it("外部削除後の編集を確認して破棄すると別のメモや保存先を選べる", async () => {
+    resetTest();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
+    vi.mocked(api.listNotes).mockResolvedValue([baseSummary, nextSummary]);
+    vi.mocked(api.readNote).mockResolvedValueOnce(baseNote).mockResolvedValueOnce(nextDocument);
+    vi.mocked(api.saveNote).mockRejectedValue(new Error("メモを読み込めません: No such file or directory"));
+    vi.mocked(api.chooseVault).mockResolvedValue(null);
+    vi.useFakeTimers();
+    let container: HTMLElement = document.body;
+    await act(async () => {
+      ({ container } = render(<App />));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /りんごのメモ/u }));
+      await Promise.resolve();
+    });
+    vi.mocked(api.listNotes).mockResolvedValue([nextSummary]);
+    await act(async () => vi.advanceTimersByTimeAsync(2500));
+    await editBody(container, "外部削除後の未保存内容");
+    await act(async () => vi.advanceTimersByTimeAsync(700));
+    vi.useRealTimers();
+    fireEvent.click(screen.getByRole("button", { name: /次のメモ/u }));
+    await waitFor(() => {
+      expect(api.saveNote).toHaveBeenCalledTimes(2);
+    });
+    expect({ reads: vi.mocked(api.readNote).mock.calls, sourceVisible: screen.queryByRole("button", { name: /りんごのメモ/u }) }).toStrictEqual({ reads: [[baseNote.id]], sourceVisible: null });
+
+    fireEvent.click(screen.getByRole("button", { name: "編集を破棄して閉じる" }));
+
+    expect({
+      alert: screen.queryByRole("alert"),
+      closed: screen.queryByText("メモを選んでください") !== null,
+      confirmation: vi.mocked(window.confirm).mock.calls,
+      deletes: vi.mocked(api.deleteNote).mock.calls,
+    }).toStrictEqual({
+      alert: null,
+      closed: true,
+      confirmation: [["未保存の編集内容を破棄して閉じますか？この操作で編集内容は失われます。"]],
+      deletes: [],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /次のメモ/u }));
+    await expect(screen.findByRole("textbox", { name: "タイトル" })).resolves.toHaveValue(nextDocument.title);
+    fireEvent.click(screen.getByTitle("保存先を変更"));
+    await waitFor(() => {
+      expect({ saves: vi.mocked(api.saveNote).mock.calls.length, selections: vi.mocked(api.chooseVault).mock.calls }).toStrictEqual({ saves: 2, selections: [[]] });
+    });
+  });
+
+  it("保存失敗後の破棄をキャンセルするとタイトルと本文を保持する", async () => {
+    resetTest();
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
+    vi.mocked(api.listNotes).mockResolvedValue([baseSummary]);
+    vi.mocked(api.readNote).mockResolvedValue(baseNote);
+    vi.mocked(api.saveNote).mockRejectedValue(new Error("save failed"));
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
+    await screen.findByRole("textbox", { name: "タイトル" });
+    vi.useFakeTimers();
+    await editBody(container, "破棄しない本文");
+    fireEvent.change(screen.getByRole("textbox", { name: "タイトル" }), { target: { value: "破棄しないタイトル" } });
+    await act(async () => vi.advanceTimersByTimeAsync(700));
+    vi.useRealTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "編集を破棄して閉じる" }));
+
+    expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue("破棄しないタイトル");
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
+    expect(view?.state.doc.toString()).toBe("破棄しない本文");
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(api.saveNote).toHaveBeenCalledExactlyOnceWith({
+      body: "破棄しない本文",
+      expectedRevision: baseNote.revision,
+      id: baseNote.id,
+      title: "破棄しないタイトル",
+    });
+  });
+
+  it("再試行が失敗しても本文を保持し、次の再試行で保存できる", async () => {
+    resetTest();
+    const saved = { ...baseNote, body: "再試行する本文", revision: "retry-r2" };
+    vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
+    vi.mocked(api.listNotes).mockResolvedValueOnce([baseSummary]).mockResolvedValue([summaryOf(saved)]);
+    vi.mocked(api.readNote).mockResolvedValue(baseNote);
+    vi.mocked(api.saveNote)
+      .mockRejectedValueOnce(new Error("save failed"))
+      .mockRejectedValueOnce(new Error("retry failed"))
+      .mockResolvedValueOnce({ note: saved, status: "saved" });
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
+    await screen.findByRole("textbox", { name: "タイトル" });
+    vi.useFakeTimers();
+    await editBody(container, saved.body);
+    await act(async () => vi.advanceTimersByTimeAsync(700));
+    vi.useRealTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "保存を再試行" }));
+
+    await expect(screen.findByText("Error: retry failed")).resolves.toBeInTheDocument();
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
+    expect(view?.state.doc.toString()).toBe(saved.body);
+    fireEvent.click(screen.getByRole("button", { name: "保存を再試行" }));
+    await expect(screen.findByText("保存済み")).resolves.toBeInTheDocument();
+    expect(api.saveNote).toHaveBeenLastCalledWith({
+      body: saved.body,
+      expectedRevision: baseNote.revision,
+      id: baseNote.id,
+      title: baseNote.title,
+    });
+    expect({ alert: screen.queryByRole("alert"), error: screen.queryByText("Error: retry failed") }).toStrictEqual({ alert: null, error: null });
+  });
+
+  it("再試行の結果が競合なら復旧操作を表示せず競合解決を待つ", async () => {
+    resetTest();
+    const external = { ...baseNote, body: "外部の本文", revision: "external-r2" };
+    vi.mocked(api.getVault).mockResolvedValue("/tmp/notes");
+    vi.mocked(api.listNotes).mockResolvedValue([baseSummary]);
+    vi.mocked(api.readNote).mockResolvedValue(baseNote);
+    vi.mocked(api.saveNote)
+      .mockRejectedValueOnce(new Error("save failed"))
+      .mockResolvedValueOnce({ current: external, status: "conflict" });
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /りんごのメモ/u }));
+    await screen.findByRole("textbox", { name: "タイトル" });
+    vi.useFakeTimers();
+    await editBody(container, "競合中も保持する本文");
+    await act(async () => vi.advanceTimersByTimeAsync(700));
+    vi.useRealTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "保存を再試行" }));
+
+    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+    expect({ discard: screen.queryByRole("button", { name: "編集を破棄して閉じる" }), retry: screen.queryByRole("button", { name: "保存を再試行" }) }).toStrictEqual({ discard: null, retry: null });
+    expect(api.saveNote).toHaveBeenCalledTimes(2);
+    expect(api.chooseVault).not.toHaveBeenCalled();
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
+    expect(view?.state.doc.toString()).toBe("競合中も保持する本文");
   });
 
   it("別のメモを読み込んだ直後に完了した古い外部読込を無視する", async () => {

@@ -22,6 +22,21 @@ describe(parseLinks, () => {
   it("旧タグを無視し、エイリアス風の文字列を内容として扱う", () => {
     expect(parseLinks("#りんご [[りんご|Apple]]").map((link) => link.displayName)).toStrictEqual(["りんご|Apple"]);
   });
+
+  it("未閉鎖行が多数あっても後続行のリンクとUTF-16位置を保持する", () => {
+    const prefix = "[[未閉鎖\r\n".repeat(80000);
+    const content = `${prefix}😀 [[ ＡＰＰＬＥ ]]\r\n[[最後]]`;
+    const lastFrom = content.indexOf("[[最後]]");
+    expect(parseLinks(content)).toStrictEqual([
+      { displayName: "ＡＰＰＬＥ", from: prefix.length + 3, normalizedName: "apple", to: content.indexOf("]]", prefix.length) + 2 },
+      { displayName: "最後", from: lastFrom, normalizedName: "最後", to: content.length },
+    ]);
+  });
+
+  it("同じ行の入れ子風の括弧とエスケープ、空の最終行を従来どおり扱う", () => {
+    const content = `${String.raw`\[[無効]] [[外側 [[内側]] [[次]]`}\n`;
+    expect(parseLinks(content).map((link) => link.displayName)).toStrictEqual(["外側 [[内側", "次"]);
+  });
 });
 
 describe("link normalization", () => {

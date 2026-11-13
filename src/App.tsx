@@ -297,6 +297,24 @@ export function App() {
     });
   };
 
+  const retrySave = () => {
+    requestEditorNavigation(() => {
+      setError(null);
+    });
+  };
+
+  const discardFailedDraft = () => {
+    if (
+      saveState !== "error" ||
+      isNavigating ||
+      !window.confirm("未保存の編集内容を破棄して閉じますか？この操作で編集内容は失われます。")
+    ) {
+      return;
+    }
+    loadDocument(null);
+    setError(null);
+  };
+
   if (!vault) {
     return (
       <div className="welcome-shell">
@@ -368,6 +386,16 @@ export function App() {
               ゴミ箱へ
             </button>
           </header>
+          {saveState === "error" && (
+            <section className="save-error-panel" role="alert">
+              <p>保存を完了できませんでした。編集内容はこの画面に残っています。</p>
+              <p>保存先や外部ファイルを確認して再試行するか、必要な内容を控えてから編集を破棄して閉じてください。</p>
+              <div className="save-error-actions">
+                <button className="primary-button" onClick={retrySave}>保存を再試行</button>
+                <button className="discard-draft-button" onClick={discardFailedDraft}>編集を破棄して閉じる</button>
+              </div>
+            </section>
+          )}
           {isNavigating ? (
             <p className="document-transition">移動先を読み込み中…</p>
           ) : (
