@@ -1,0 +1,137 @@
+   Compiling libc v0.2.189
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling typenum v1.20.1
+   Compiling unicode-ident v1.0.24
+   Compiling cfg-if v1.0.4
+   Compiling getrandom v0.4.3
+   Compiling rustix v1.1.4
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling bitflags v2.13.1
+   Compiling generic-array v0.14.7
+   Compiling tinyvec_macros v0.1.1
+   Compiling tinyvec v1.12.0
+   Compiling fastrand v2.5.0
+   Compiling once_cell v1.21.4
+   Compiling unicode-normalization v0.1.25
+   Compiling syn v3.0.3
+   Compiling errno v0.3.14
+   Compiling cpufeatures v0.2.17
+   Compiling uuid v1.24.1
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling tempfile v3.27.0
+   Compiling serde_derive v1.0.229
+   Compiling synaplink-rust-audit v0.0.0 (/private/tmp/synaplink-measured-issues-rust)
+warning: unused import: `PathBuf`
+ --> src/lib.rs:5:89
+  |
+5 | use std::{collections::BTreeSet, fs::{self, File, OpenOptions}, io::Write, path::{Path, PathBuf}, time::UNIX_EPOCH};
+  |                                                                                         ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `normalize_link` is never used
+  --> src/lib.rs:57:4
+   |
+57 | fn normalize_link(value: &str) -> String {
+   |    ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `extract_links` is never used
+  --> src/lib.rs:61:4
+   |
+61 | fn extract_links(content: &str) -> Vec<LinkReference> {
+   |    ^^^^^^^^^^^^^
+
+warning: function `unique_links` is never used
+   --> src/lib.rs:112:4
+    |
+112 | fn unique_links(content: &str) -> Vec<LinkReference> {
+    |    ^^^^^^^^^^^^
+
+warning: function `revision` is never used
+   --> src/lib.rs:120:4
+    |
+120 | fn revision(content: &str) -> String {
+    |    ^^^^^^^^
+
+warning: function `modified_at` is never used
+   --> src/lib.rs:124:4
+    |
+124 | fn modified_at(path: &Path) -> Result<u64, String> {
+    |    ^^^^^^^^^^^
+
+warning: function `split_document` is never used
+   --> src/lib.rs:136:4
+    |
+136 | fn split_document(content: &str) -> (String, String) {
+    |    ^^^^^^^^^^^^^^
+
+warning: function `document_from_path` is never used
+   --> src/lib.rs:143:4
+    |
+143 | fn document_from_path(path: &Path) -> Result<NoteDocument, String> {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: function `summary_from_document` is never used
+   --> src/lib.rs:161:4
+    |
+161 | fn summary_from_document(note: NoteDocument) -> NoteSummary {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `scan_notes` is never used
+   --> src/lib.rs:181:4
+    |
+181 | fn scan_notes(vault: &Path) -> Result<Vec<NoteSummary>, String> {
+    |    ^^^^^^^^^^
+
+warning: function `atomic_write` is never used
+   --> src/lib.rs:197:4
+    |
+197 | fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
+    |    ^^^^^^^^^^^^
+
+warning: function `save_note_at_path` is never used
+   --> src/lib.rs:228:4
+    |
+228 | fn save_note_at_path(input: &SaveNoteInput, path: &Path) -> Result<SaveResult, String> {
+    |    ^^^^^^^^^^^^^^^^^
+
+warning: `synaplink-rust-audit` (lib) generated 12 warnings (run `cargo fix --lib -p synaplink-rust-audit` to apply 1 suggestion)
+warning: `synaplink-rust-audit` (lib test) generated 1 warning (1 duplicate)
+    Finished `release` profile [optimized] target(s) in 3.95s
+     Running unittests src/lib.rs (/private/tmp/synaplink-measured-issues-rust/target/release/deps/synaplink_rust_audit-8866ad0fc5507539)
+
+running 7 tests
+test additional_audit_tests::external_deletion_blocks_even_forced_save ... external_deletion_force_save=Some("メモを読み込めません: No such file or directory (os error 2)")
+ok
+test additional_audit_tests::scan_notes_timing ... scan_files=1000 bytes_per_file=1024 visible=1000 elapsed_ms=26.438
+scan_files=5000 bytes_per_file=1024 visible=5000 elapsed_ms=98.429
+ok
+test additional_audit_tests::symlink_note_save_replaces_link_not_target ... symlink_visible=true save_replaces_symlink=true external_target_unchanged=true
+ok
+test audit_tests::existing_permissions_change_on_save ... permission_after_save=644
+ok
+test audit_tests::external_write_during_atomic_save_is_lost ... external_edit_written=true conflict_reported=false external_edit_retained=false
+ok
+test audit_tests::invalid_utf8_note_silently_disappears ... scan_ok=true files=2 visible_notes=1
+ok
+test malformed_link_perf::timing ... malformed_lines=10000 bytes=40000 links=0 elapsed_ms=48.885
+malformed_lines=20000 bytes=80000 links=0 elapsed_ms=195.859
+malformed_lines=40000 bytes=160000 links=0 elapsed_ms=767.882
+malformed_lines=80000 bytes=320000 links=0 elapsed_ms=3198.144
+ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.07s
+
+   Doc-tests synaplink_rust_audit
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

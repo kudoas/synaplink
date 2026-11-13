@@ -1,0 +1,22 @@
+
+ RUN  v4.1.10 /Users/daichi/ghq/github.com/kudoas/synaplink/.worktrees/measured-issues/docs/investigations/2026-11-14/evidence
+
+stdout | frontend-hooks.repro.tsx > later edit remains dirty after 10 seconds following slow onSaved
+CONFIRMED: second edit remains dirty after 10s; only first edit persisted
+
+stdout | frontend-hooks.repro.tsx > undo after external synchronization emits the previous body as a user change
+CONFIRMED: undo external refresh emits old disk body as a user edit
+
+stdout | frontend-hooks.repro.tsx > unmount before debounce does not persist unsaved edits
+CONFIRMED: unmount cancels debounce without saving
+
+ ✓ frontend-hooks.repro.tsx > later edit remains dirty after 10 seconds following slow onSaved 9ms
+ ✓ frontend-hooks.repro.tsx > undo after external synchronization emits the previous body as a user change 79ms
+ ✓ frontend-hooks.repro.tsx > unmount before debounce does not persist unsaved edits 1ms
+ ✓ frontend-app.repro.tsx > late old-vault polling replaces new-vault notes 25ms
+ ✓ frontend-app.repro.tsx > save failure after external deletion blocks note selection and vault change 111ms
+
+ Test Files  2 passed (2)
+      Tests  5 passed (5)
+   Start at  00:45:59
+   Duration  756ms (transform 63ms, setup 175ms, import 159ms, tests 226ms, environment 758ms)

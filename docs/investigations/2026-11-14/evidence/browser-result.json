@@ -1,0 +1,56 @@
+{
+  "browserVersion": "157.0.8103.38",
+  "viewport": null,
+  "search": {
+    "query": "深部検索語",
+    "visibleRows": 0,
+    "message": "メモがありません"
+  },
+  "opener": {
+    "calls": 1,
+    "errorToasts": 0
+  },
+  "newNote": {
+    "activeClass": "new-note-button",
+    "title": "無題"
+  },
+  "wrappedLine": {
+    "lineHeight": 489.546875,
+    "caretOffsetFromTop": 292.96875,
+    "activeTag": "DIV"
+  },
+  "afterArrowUp": {
+    "tag": "INPUT",
+    "label": "タイトル"
+  },
+  "conflict": {
+    "activeInsideDialog": false,
+    "activeClass": "cm-content cm-lineWrapping"
+  },
+  "tabSequence": [
+    {
+      "tag": "BUTTON",
+      "className": "",
+      "insideDialog": true,
+      "text": "外部の内容を読む"
+    },
+    {
+      "tag": "BUTTON",
+      "className": "primary-button",
+      "insideDialog": true,
+      "text": "現在の編集で上書き"
+    },
+    {
+      "tag": "BODY",
+      "className": "",
+      "insideDialog": false,
+      "text": null
+    },
+    {
+      "tag": "BUTTON",
+      "className": "icon-button",
+      "insideDialog": false,
+      "text": "⋯"
+    }
+  ]
+}
