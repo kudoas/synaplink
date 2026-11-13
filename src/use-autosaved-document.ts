@@ -69,6 +69,7 @@ export function useAutosavedDocument<T extends VersionedDocument>({
   const pendingNavigationRef = useRef<NavigationRequest | null>(null);
   const queuedNavigationRef = useRef<NavigationRequest | null>(null);
   const inFlightRef = useRef<Promise<void> | null>(null);
+  const requestedEditGenerationRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
 
   const persistRef = useRef(persist);
@@ -189,6 +190,7 @@ export function useAutosavedDocument<T extends VersionedDocument>({
   const persistCurrent = useCallback(
     async (request?: PersistRequest): Promise<void> => {
       if (inFlightRef.current) {
+        requestedEditGenerationRef.current = editGenerationRef.current;
         return inFlightRef.current;
       }
 
@@ -258,7 +260,8 @@ export function useAutosavedDocument<T extends VersionedDocument>({
               return;
             }
             updateSaveState("dirty");
-            if (pendingNavigationRef.current) {
+            // A joined debounce request covers only the edit whose delay has elapsed.
+            if (pendingNavigationRef.current || requestedEditGenerationRef.current === editGenerationRef.current) {
               currentRequest = { overwrite: false };
               documentToSave = documentRef.current;
             } else {
