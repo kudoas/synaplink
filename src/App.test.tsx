@@ -566,7 +566,8 @@ describe(App, () => {
       overwrite: true,
       title: baseNote.title,
     });
-    await expect(screen.findByText("保存済み")).resolves.toBeInTheDocument();
+    const savedStatus = await screen.findByText("保存済み");
+    expect(savedStatus).toBeInTheDocument();
   });
 
   it("未保存の通常メモを即時保存してから選択先へ移動する", async () => {
@@ -599,7 +600,8 @@ describe(App, () => {
       finishSave({ note: { ...baseNote, body: "移動前の編集", revision: "revision-2" }, status: "saved" });
       await pendingSave;
     });
-    await expect(screen.findByRole("textbox", { name: "タイトル" })).resolves.toHaveValue(nextDocument.title);
+    const nextTitleInput = await screen.findByRole("textbox", { name: "タイトル" });
+    expect(nextTitleInput).toHaveValue(nextDocument.title);
     expect(api.readNote).toHaveBeenLastCalledWith(nextDocument.id);
   });
 
@@ -621,7 +623,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByRole("button", { name: /次のメモ/u }));
 
-    await expect(screen.findByText("Error: refresh failed")).resolves.toBeInTheDocument();
+    const refreshError = await screen.findByText("Error: refresh failed");
+
+    expect(refreshError).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
     expect(api.readNote).toHaveBeenCalledExactlyOnceWith(baseNote.id);
   });
@@ -677,7 +681,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByTitle("保存先を変更"));
 
-    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+    const conflictDialog = await screen.findByRole("dialog");
+
+    expect(conflictDialog).toBeInTheDocument();
     expect(api.chooseVault).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
   });
@@ -695,7 +701,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByTitle("保存先を変更"));
 
-    await expect(screen.findByText("Error: save failed")).resolves.toBeInTheDocument();
+    const saveError = await screen.findByText("Error: save failed");
+
+    expect(saveError).toBeInTheDocument();
     expect(api.chooseVault).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
   });
@@ -743,7 +751,8 @@ describe(App, () => {
       deletes: [],
     });
     fireEvent.click(screen.getByRole("button", { name: /次のメモ/u }));
-    await expect(screen.findByRole("textbox", { name: "タイトル" })).resolves.toHaveValue(nextDocument.title);
+    const nextTitleInput = await screen.findByRole("textbox", { name: "タイトル" });
+    expect(nextTitleInput).toHaveValue(nextDocument.title);
     fireEvent.click(screen.getByTitle("保存先を変更"));
     await waitFor(() => {
       expect({ saves: vi.mocked(api.saveNote).mock.calls.length, selections: vi.mocked(api.chooseVault).mock.calls }).toStrictEqual({ saves: 2, selections: [[]] });
@@ -800,11 +809,14 @@ describe(App, () => {
 
     fireEvent.click(screen.getByRole("button", { name: "保存を再試行" }));
 
-    await expect(screen.findByText("Error: retry failed")).resolves.toBeInTheDocument();
+    const retryError = await screen.findByText("Error: retry failed");
+
+    expect(retryError).toBeInTheDocument();
     const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
     expect(view?.state.doc.toString()).toBe(saved.body);
     fireEvent.click(screen.getByRole("button", { name: "保存を再試行" }));
-    await expect(screen.findByText("保存済み")).resolves.toBeInTheDocument();
+    const savedStatus = await screen.findByText("保存済み");
+    expect(savedStatus).toBeInTheDocument();
     expect(api.saveNote).toHaveBeenLastCalledWith({
       body: saved.body,
       expectedRevision: baseNote.revision,
@@ -833,7 +845,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByRole("button", { name: "保存を再試行" }));
 
-    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+    const conflictDialog = await screen.findByRole("dialog");
+
+    expect(conflictDialog).toBeInTheDocument();
     expect({ discard: screen.queryByRole("button", { name: "編集を破棄して閉じる" }), retry: screen.queryByRole("button", { name: "保存を再試行" }) }).toStrictEqual({ discard: null, retry: null });
     expect(api.saveNote).toHaveBeenCalledTimes(2);
     expect(api.chooseVault).not.toHaveBeenCalled();
@@ -896,7 +910,8 @@ describe(App, () => {
     await waitFor(() => {
       expect(api.deleteNote).toHaveBeenCalledExactlyOnceWith(baseNote.id);
     });
-    await expect(screen.findByText("メモを選んでください")).resolves.toBeInTheDocument();
+    const emptyEditor = await screen.findByText("メモを選んでください");
+    expect(emptyEditor).toBeInTheDocument();
   });
 
   it("進行中の保存を完了してから確認済みメモをゴミ箱へ移動する", async () => {
@@ -943,7 +958,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByRole("button", { name: "ゴミ箱へ" }));
 
-    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+    const conflictDialog = await screen.findByRole("dialog");
+
+    expect(conflictDialog).toBeInTheDocument();
     expect(api.deleteNote).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
   });
@@ -962,7 +979,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByRole("button", { name: "ゴミ箱へ" }));
 
-    await expect(screen.findByText("Error: save failed")).resolves.toBeInTheDocument();
+    const saveError = await screen.findByText("Error: save failed");
+
+    expect(saveError).toBeInTheDocument();
     expect(api.deleteNote).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
   });
