@@ -1,42 +1,130 @@
 # Synaplink
 
-A local-first Zettelkasten note-taking app for macOS. Notes are stored as ordinary UTF-8 plain text, and `#tags` in the body connect related notes.
+Synaplinkは、プレーンテキストのメモを `[[リンク]]` でつなぐmacOS向けのメモアプリです。メモは自分で選んだローカルフォルダに保存し、外部のエディタでも読み書きできます。
 
-## Features
+初めて使う場合は「アプリをビルドして起動する」と「メモを書き始める」を順に進めてください。更新・保存エラーへの対処・開発手順は、必要なときに参照できます。
 
-- Choose any local folder as the note vault
-- Store each note in a single `.txt` file
-- Display the first line as the title and subsequent lines as the body
-- Support Unicode tags such as `#café`
-- List related notes by tag
-- Write dedicated notes on tag pages without mixing them into ordinary notes
-- Autosave changes and detect conflicts with external edits
-- Load `.txt` files created or edited in external editors
+## アプリをビルドして起動する
 
-## Tag Syntax
-
-Tags begin with `#` followed by Unicode letters, numbers, hyphens, or underscores. Whitespace and punctuation end a tag.
-
-```text
-Apples are a type of #fruit.
-Collect varieties under #green_apples.
-```
-
-Escape a hash as `\#apple` when it should not start a tag. Tag comparison uses Unicode NFKC normalization and lowercases letters.
-
-## Development
-
-Install the required tools with [mise](https://mise.jdx.dev/).
+macOS上でソースからアプリをビルドします。Git、Xcode Command Line Tools、[mise](https://mise.jdx.dev/)を用意してください。Xcode Command Line Toolsが未導入なら、次のコマンドでインストールします。
 
 ```sh
+xcode-select --install
+```
+
+リポジトリを取得し、指定されたツールと依存パッケージをインストールします。すでに取得済みなら、そのリポジトリへ移動して `mise install` から進めてください。
+
+```sh
+git clone https://github.com/kudoas/synaplink.git
+cd synaplink
 mise install
-pnpm install
+pnpm install --frozen-lockfile
+pnpm build:macos
+open src-tauri/target/release/bundle/macos/Synaplink.app
+```
+
+生成先は `src-tauri/target/release/bundle/macos/Synaplink.app` です。Finderでこのアプリを「アプリケーション」フォルダへコピーすると、以後はSpotlightやFinderから起動できます。通常の利用に開発サーバーは必要ありません。
+
+Node.jsとpnpmのバージョンは [package.json](package.json)、Rustのツールチェーンは [.mise.toml](.mise.toml)で指定しています。コマンド実行時にバージョン不一致が出る場合は、リポジトリ内で `mise install` を実行し、miseが有効なシェルでやり直してください。
+
+## メモを書き始める
+
+1. 起動後に「メモの保存先を選ぶ」を押し、メモを置くフォルダを選びます。この保存先フォルダをvaultと呼びます。
+2. 「新しいメモ」を押し、タイトルと本文を書きます。
+3. 入力が止まってから約700ms後に自動保存されます。終了前に、画面上部が「保存済み」になったことを確認してください。
+
+タイトル末尾でEnterまたは↓を押すと本文へ移動します。本文の先頭行で、文字を選択せずに↑を押すとタイトルへ戻ります。
+
+メモを削除する場合は「ゴミ箱へ」を押し、確認に進みます。保存先を変更する場合はサイドバー右上の「⋯」を押します。メモや保存先を切り替える際は、編集中の内容の保存が先に行われます。
+
+## `[[リンク]]` から関連メモを探す
+
+本文で語句を二重の角括弧で囲むと、クリックできるリンクになります。
+
+```text
+りんごの栽培
+畑で育てる [[りんご]] の品種と、[[果物]] の収穫時期を調べる。
+```
+
+リンクをクリックすると、その語句が検索欄に入り、検索候補のうち更新日時が最も新しいメモを開きます。現在のメモが最新なら、そのまま表示します。候補がない場合は検索結果だけが変わり、メモは自動作成されません。
+
+リンクは固定のファイルへの参照ではなく、語句で関連メモを探すための入口です。リンク名には日本語や空白を使えます。
+
+- `[[ りんご ]]` は前後の空白を除いて `りんご` として扱います。
+- `\[[りんご]]` のように直前にバックスラッシュを1つ置くと、リンクになりません。
+- 空のリンクや、改行をまたぐリンクは認識しません。
+- `[[りんご|Apple]]` は別名表示の構文ではなく、`りんご|Apple` という語句になります。
+
+従来の `#タグ` はリンクとして認識しません。本文中の `https://` で始まるURLは、クリックするとブラウザで開きます。
+
+## 検索欄でメモを絞り込む
+
+検索対象は、タイトル、本文プレビュー、本文中のリンク名です。本文プレビューには、最初の空でない行の先頭90文字を使います。本文全体の全文検索には対応していません。
+
+検索は部分一致です。検索語と対象文字列にUnicode NFKC正規化と小文字化を行うため、全角・半角の英数字や英字の大文字・小文字を区別せずに探せます。検索欄を空にすると全メモを表示します。
+
+## メモは保存先の `.txt` ファイルとして管理する
+
+1メモにつき1つのUTF-8テキストファイルを使います。1行目がタイトル、2行目以降が本文です。アプリで新規作成したメモのファイル名には、重複しにくい識別子（UUID）を使います。タイトルを変更してもファイル名は変わりません。
+
+```text
+りんごの栽培
+畑で育てる [[りんご]] の品種を記録する。
+収穫時期は秋。
+```
+
+既存のメモを読み込む場合は、この形式の `.txt` ファイルを保存先フォルダの直下に置いてください。サブフォルダ内のファイルは読み込みません。一覧は約2.5秒ごとに更新され、外部エディタでの変更も、アプリ側に未保存の編集がなければ読み直します。
+
+保存先の選択はアプリの設定に記録します。メモ本文やリンクは各ファイルに含まれるため、設定を失っても同じフォルダを選び直せます。同期やバックアップは、利用するフォルダに合わせて別途管理してください。
+
+## 保存エラーや外部編集との競合に対処する
+
+保存に失敗した場合、編集内容は画面に残り、次の操作を選べます。
+
+| 操作 | 動作 |
+| --- | --- |
+| 保存を再試行 | 保存先やファイルの状態を確認した後、同じ編集内容を再度保存します。外部変更があれば競合の確認に進みます。 |
+| 編集を破棄して閉じる | 確認後に未保存の編集内容を破棄して、メモを閉じます。必要な内容を控えてから実行してください。 |
+
+保存時に外部変更との競合を検出すると、確認画面を表示します。「外部の内容を読む」は現在の未保存の編集を外部の内容で置き換え、「現在の編集で上書き」は画面の編集内容をファイルへ保存します。
+
+保存先の切替に失敗し、元の保存先にも戻せなくなった場合は、編集画面を閉じて保存先の選択画面へ戻ります。保存先を選び直してから利用を再開してください。
+
+## 更新後はアプリをビルドし直す
+
+ソースを更新しても、「アプリケーション」フォルダへコピーしたアプリは自動更新されません。アプリを終了し、リポジトリのmainブランチで次を実行してください。ローカルに作業中の変更がある場合は、先にその変更を整理します。
+
+```sh
+git switch main
+git pull --ff-only
+mise install
+pnpm install --frozen-lockfile
+pnpm build:macos
+```
+
+生成した `Synaplink.app` を「アプリケーション」フォルダのものと置き換えて起動します。メモはアプリ本体とは別の保存先フォルダに置かれています。
+
+## 開発時はTauri経由で起動する
+
+初回のツール・依存パッケージの導入後、リポジトリ内で実行します。
+
+```sh
 pnpm tauri dev
 ```
 
-Use `pnpm dev` to start only the web UI. Local file operations require the Tauri runtime.
+`pnpm dev` はWeb UIだけを起動します。保存先選択やメモの読み書きを含む動作確認には、Tauriの実行環境が必要です。
 
-## Testing and Building
+| パス | 内容 |
+| --- | --- |
+| `src/` | React・TypeScript・CodeMirrorによる画面と編集処理 |
+| `src-tauri/` | Tauri・Rustによるデスクトップ機能とローカルファイル操作 |
+| `dist/`、`src-tauri/target/` | ビルド生成物。直接編集・コミットしません。 |
+
+JavaScript依存のバージョンは `package.json` で完全固定し、変更時は `pnpm-lock.yaml` も更新します。作業上の規約は [AGENTS.md](AGENTS.md) を参照してください。
+
+## テスト・静的検査・アプリ生成を確認する
+
+変更した範囲に応じて、次のコマンドで検証します。`pnpm build` には型チェックが含まれます。
 
 ```sh
 pnpm lint
@@ -45,18 +133,9 @@ pnpm build
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml
-pnpm tauri build --bundles app
+pnpm build:macos
 ```
 
-TypeScript uses every Oxlint category with type-aware checking. `.oxlintrc.json` explicitly excludes only conflicting rules and rules incompatible with the React or Tauri architecture. Rust uses rustfmt and denies Clippy's `all`, `pedantic`, `nursery`, `cargo`, and safety-related restriction rules.
+[GitHub ActionsのCI](.github/workflows/ci.yml)でも、テスト・静的検査・macOSアプリの生成を実行します。CIでのnpm依存取得に関する設定は [Takumi Guardの運用手順](docs/operations/takumi-guard.md)を参照してください。
 
-## Data Format
-
-The app uses UUIDs for generated file names. Note contents are plain text with no proprietary metadata.
-
-```text
-Note title
-The body starts here. #apple #fruit
-```
-
-Even if caches or settings outside the vault are deleted, tag information can be rebuilt from the note contents.
+使い方の疑問や不具合は [GitHub Issues](https://github.com/kudoas/synaplink/issues)へお願いします。不具合を報告する際は、利用したコミット、macOSのバージョン、再現手順、エラー表示を添えてください。
