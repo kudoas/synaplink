@@ -45,6 +45,11 @@ button { color: inherit; }
 .icon-button, .delete-button, .back-button { border: 0; background: transparent; cursor: pointer; }
 .icon-button { width: 30px; height: 30px; border-radius: 8px; font-size: 19px; }
 .icon-button:hover { background: rgba(0, 0, 0, .05); }
+.history-navigation { display: flex; gap: 8px; margin: 0 16px 10px; }
+.history-navigation button { flex: 1; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; cursor: pointer; font-size: 12px; }
+.history-navigation button:hover:not(:disabled) { background: rgba(255,255,255,.48); }
+.history-navigation button:disabled { opacity: .45; cursor: default; }
+.history-navigation button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .search-box { display: flex; align-items: center; gap: 7px; margin: 4px 16px 10px; padding: 9px 11px; color: var(--muted); background: rgba(255,255,255,.48); border: 1px solid var(--line); border-radius: 8px; }
 .search-box input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); }

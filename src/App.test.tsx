@@ -389,8 +389,8 @@ describe(App, () => {
 
     fireEvent.click(document.querySelector(".cm-wikilink")!, { button: 0 });
 
-    expect(screen.getByPlaceholderText("メモを検索")).toHaveValue("りんご");
     await screen.findByDisplayValue("最新のりんご");
+    expect(screen.getByPlaceholderText("メモを検索")).toHaveValue("りんご");
     expect(api.readNote).toHaveBeenLastCalledWith("newest.txt");
     expect(screen.getByRole("button", { name: /古いりんご/u })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /最新のりんご/u })).toBeInTheDocument();
