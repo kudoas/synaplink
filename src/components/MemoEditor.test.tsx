@@ -1,6 +1,7 @@
 import { createRef } from "react";
 import { fireEvent, render } from "@testing-library/react";
 import { EditorSelection } from "@codemirror/state";
+import { redo, undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { describe, expect, it, vi } from "vitest";
@@ -36,6 +37,58 @@ describe(MemoEditor, () => {
     });
 
     expect(onChange).toHaveBeenCalledExactlyOnceWith("本文を編集");
+  });
+
+  it("外部本文へ置き換えた後のUndoとRedoでは過去の本文を復元しない", () => {
+    const onChange = vi.fn();
+    const handlers = { handleNavigateBackward: vi.fn(), handleOpenLink: vi.fn() };
+    const { container, rerender } = render(<MemoEditor value="元の本文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "を編集" }, userEvent: "input.type" });
+    onChange.mockClear();
+
+    rerender(<MemoEditor value="外部で変更した本文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+
+    const didUndo = undo(view);
+    const didRedo = redo(view);
+    expect({ redo: didRedo, undo: didUndo }).toStrictEqual({ redo: false, undo: false });
+    expect(view.state.doc.toString()).toBe("外部で変更した本文");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(container.querySelector(".cm-editor")).toBe(view.dom);
+  });
+
+  it("同じ本文の保存応答では通常のUndoとRedoを保持する", () => {
+    const onChange = vi.fn();
+    const handlers = { handleNavigateBackward: vi.fn(), handleOpenLink: vi.fn() };
+    const { container, rerender } = render(<MemoEditor value="本文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "を編集" }, userEvent: "input.type" });
+    rerender(<MemoEditor value="本文を編集" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+
+    const didUndo = undo(view);
+    const afterUndo = view.state.doc.toString();
+    const didRedo = redo(view);
+    expect({ afterUndo, document: view.state.doc.toString(), redo: didRedo, undo: didUndo }).toStrictEqual({
+      afterUndo: "本文", document: "本文を編集", redo: true, undo: true,
+    });
+    expect(onChange.mock.calls).toStrictEqual([["本文を編集"], ["本文"], ["本文を編集"]]);
+  });
+
+  it("外部本文の取込後も選択範囲を本文の長さに収め、新しいユーザー編集だけUndoできる", () => {
+    const onChange = vi.fn();
+    const handlers = { handleNavigateBackward: vi.fn(), handleOpenLink: vi.fn() };
+    const { container, rerender } = render(<MemoEditor value="長い本文を編集しています" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+    view.dispatch({ selection: EditorSelection.create([EditorSelection.cursor(1), EditorSelection.cursor(view.state.doc.length)], 1) });
+    rerender(<MemoEditor value="短文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+
+    expect(view.state.selection.ranges.map((range) => range.head)).toStrictEqual([1, 2]);
+    view.dispatch({ changes: { from: 2, insert: "を編集" }, userEvent: "input.type" });
+    const didUndo = undo(view);
+    const afterUndo = view.state.doc.toString();
+    const didUndoAgain = undo(view);
+    expect({ afterUndo, first: didUndo, second: didUndoAgain }).toStrictEqual({ afterUndo: "短文", first: true, second: false });
+    expect(onChange.mock.calls).toStrictEqual([["短文を編集"], ["短文"]]);
   });
 
   it("本文先頭へフォーカスを移動する", () => {
