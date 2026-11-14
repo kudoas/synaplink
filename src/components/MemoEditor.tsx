@@ -1,5 +1,5 @@
 import { basicSetup } from "codemirror";
-import { Annotation, EditorState, Prec } from "@codemirror/state";
+import { EditorSelection, EditorState, Prec } from "@codemirror/state";
 import { Decoration, EditorView, keymap, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
@@ -54,11 +54,10 @@ const interactivePlugin = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
-const externalValueSync = Annotation.define<boolean>();
-
 export function MemoEditor({ value, onChange, onNavigateBackward, onOpenLink, ref }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
+  const createStateRef = useRef<((doc: string) => EditorState) | null>(null);
   const initialValue = useRef(value);
   const changeHandler = useRef(onChange);
   const navigateBackwardHandler = useRef(onNavigateBackward);
@@ -105,87 +104,94 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenLink, re
         },
       ]),
     );
-    const view = new EditorView({
-      parent: host.current,
-      state: EditorState.create({
-        doc: initialValue.current,
-        extensions: [
-          navigateBackwardKeymap,
-          basicSetup,
-          interactivePlugin,
-          EditorView.lineWrapping,
-          EditorView.updateListener.of((update) => {
-            const isExternalValueSync = update.transactions.some((transaction) => transaction.annotation(externalValueSync));
-            if (update.docChanged && !isExternalValueSync) {
-              changeHandler.current(update.state.doc.toString());
+    const createState = (doc: string) => EditorState.create({
+      doc,
+      extensions: [
+        navigateBackwardKeymap,
+        basicSetup,
+        interactivePlugin,
+        EditorView.lineWrapping,
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            changeHandler.current(update.state.doc.toString());
+          }
+        }),
+        EditorView.domEventHandlers({
+          click(event) {
+            if (event.button !== 0) {
+              return false;
             }
-          }),
-          EditorView.domEventHandlers({
-            click(event) {
-              if (event.button !== 0) {
+            const target = event.target instanceof HTMLElement ? event.target : null;
+            const url = target?.closest<HTMLElement>(".cm-zettel-link")?.dataset.url;
+            if (!url) {
+              const link = target?.closest<HTMLElement>(".cm-wikilink")?.dataset.link;
+              if (!link) {
                 return false;
-              }
-              const target = event.target instanceof HTMLElement ? event.target : null;
-              const url = target?.closest<HTMLElement>(".cm-zettel-link")?.dataset.url;
-              if (!url) {
-                const link = target?.closest<HTMLElement>(".cm-wikilink")?.dataset.link;
-                if (!link) {
-                  return false;
-                }
-                event.preventDefault();
-                linkHandler.current(link);
-                return true;
               }
               event.preventDefault();
-              void openUrl(url).catch(() => null);
+              linkHandler.current(link);
               return true;
-            },
-            mousedown(event) {
-              const target = event.target instanceof HTMLElement ? event.target : null;
-              if (target?.closest(".cm-zettel-link")) {
-                return false;
-              }
-
+            }
+            event.preventDefault();
+            void openUrl(url).catch(() => null);
+            return true;
+          },
+          mousedown(event) {
+            const target = event.target instanceof HTMLElement ? event.target : null;
+            if (target?.closest(".cm-zettel-link")) {
               return false;
-            },
-          }),
-          EditorView.theme({
-            "&": { backgroundColor: "transparent", height: "100%" },
-            "&.cm-focused": { outline: "none" },
-            ".cm-content": { padding: "20px 4px 120px" },
-            ".cm-gutters": { display: "none" },
-            ".cm-scroller": { fontFamily: "var(--font-body)", lineHeight: "1.8" },
-            ".cm-wikilink": {
-              backgroundColor: "var(--accent-soft)",
-              borderRadius: "4px",
-              color: "var(--accent)",
-              cursor: "pointer",
-            },
-            ".cm-zettel-link": {
-              color: "var(--accent)",
-              cursor: "pointer",
-              textDecoration: "underline",
-              textUnderlineOffset: "3px",
-            },
-          }),
-        ],
-      }),
+            }
+
+            return false;
+          },
+        }),
+        EditorView.theme({
+          "&": { backgroundColor: "transparent", height: "100%" },
+          "&.cm-focused": { outline: "none" },
+          ".cm-content": { padding: "20px 4px 120px" },
+          ".cm-gutters": { display: "none" },
+          ".cm-scroller": { fontFamily: "var(--font-body)", lineHeight: "1.8" },
+          ".cm-wikilink": {
+            backgroundColor: "var(--accent-soft)",
+            borderRadius: "4px",
+            color: "var(--accent)",
+            cursor: "pointer",
+          },
+          ".cm-zettel-link": {
+            color: "var(--accent)",
+            cursor: "pointer",
+            textDecoration: "underline",
+            textUnderlineOffset: "3px",
+          },
+        }),
+      ],
     });
+    createStateRef.current = createState;
+    const view = new EditorView({ parent: host.current, state: createState(initialValue.current) });
     editor.current = view;
     return () => {
+      editor.current = null;
+      createStateRef.current = null;
       view.destroy();
     };
   }, []);
 
   useEffect(() => {
     const view = editor.current;
-    if (!view || view.state.doc.toString() === value) {
+    const createState = createStateRef.current;
+    if (!view || !createState || view.state.doc.toString() === value) {
       return;
     }
-    view.dispatch({
-      annotations: externalValueSync.of(true),
-      changes: { from: 0, insert: value, to: view.state.doc.length },
-    });
+    // External replacements start a new undo history; value echoes from user edits do not.
+    const state = createState(value);
+    const selection = EditorSelection.create(
+      view.state.selection.ranges.map((range) => EditorSelection.range(
+        Math.min(range.anchor, state.doc.length),
+        Math.min(range.head, state.doc.length),
+      )),
+      view.state.selection.mainIndex,
+    );
+    view.setState(state.update({ selection }).state);
   }, [value]);
 
   return <div className="memo-editor" ref={host} />;
