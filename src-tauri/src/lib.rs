@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
-    fs::{self, File, OpenOptions},
-    io::Write,
+    fs::{self, File},
     path::{Path, PathBuf},
     sync::Mutex,
     time::UNIX_EPOCH,
@@ -11,6 +10,8 @@ use std::{
 use tauri::{AppHandle, Manager, State};
 use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
+
+mod safe_save;
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -258,29 +259,8 @@ fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "保存先が不正です".to_string())?;
-    let permissions = match fs::metadata(path) {
-        Ok(metadata) => Some(metadata.permissions()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(format!("メモのアクセス権限を取得できません: {error}")),
-    };
-    let temporary = parent.join(format!(
-        ".{}.{}.tmp",
-        path.file_name().unwrap_or_default().to_string_lossy(),
-        Uuid::new_v4()
-    ));
+    let temporary = safe_save::prepare(path, content)?;
     let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)
-            .map_err(|error| format!("一時ファイルを作成できません: {error}"))?;
-        if let Some(permissions) = permissions {
-            file.set_permissions(permissions)
-                .map_err(|error| format!("メモのアクセス権限を設定できません: {error}"))?;
-        }
-        file.write_all(content.as_bytes())
-            .and_then(|()| file.sync_all())
-            .map_err(|error| format!("メモを書き込めません: {error}"))?;
         fs::rename(&temporary, path)
             .map_err(|error| format!("メモを置き換えられません: {error}"))?;
         File::open(parent)
@@ -342,6 +322,7 @@ fn create_note(state: State<'_, AppState>) -> Result<NoteDocument, String> {
 }
 
 fn save_note_at_path(input: &SaveNoteInput, path: &Path) -> Result<SaveResult, String> {
+    safe_save::ensure_regular(path)?;
     let current = document_from_path(path)?;
     if current.revision != input.expected_revision && input.overwrite != Some(true) {
         return Ok(SaveResult::Conflict { current });
@@ -352,10 +333,7 @@ fn save_note_at_path(input: &SaveNoteInput, path: &Path) -> Result<SaveResult, S
     if revision(&content) == current.revision {
         return Ok(SaveResult::Saved { note: current });
     }
-    atomic_write(path, &content)?;
-    Ok(SaveResult::Saved {
-        note: document_from_path(path)?,
-    })
+    safe_save::replace(path, &content, &current.revision)
 }
 
 #[tauri::command]
