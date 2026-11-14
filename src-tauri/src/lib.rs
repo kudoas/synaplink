@@ -12,6 +12,7 @@ use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 mod safe_save;
+mod shutdown;
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -356,6 +357,7 @@ fn delete_note(id: String, state: State<'_, AppState>) -> Result<(), String> {
 /// Panics when the Tauri runtime cannot be started.
 pub fn run() {
     tauri::Builder::default()
+        .manage(shutdown::ShutdownState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -366,7 +368,15 @@ pub fn run() {
                     .map(PathBuf::from)
                     .filter(|path| path.is_dir()),
             })));
+            #[cfg(target_os = "macos")]
+            shutdown::install_quit_menu(app.handle())?;
             Ok(())
+        })
+        .on_window_event(shutdown::handle_window_event)
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == shutdown::QUIT_MENU_ID {
+                shutdown::request_shutdown(app);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_vault,
@@ -375,10 +385,14 @@ pub fn run() {
             read_note,
             create_note,
             save_note,
-            delete_note
+            delete_note,
+            shutdown::register_shutdown_guard,
+            shutdown::cancel_shutdown,
+            shutdown::complete_shutdown
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Synaplink");
+        .build(tauri::generate_context!())
+        .expect("error while building Synaplink")
+        .run(|app, event| shutdown::handle_run_event(app, &event));
 }
 
 #[cfg(test)]
