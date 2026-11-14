@@ -267,7 +267,7 @@ mod tests {
         assert_eq!(current.body, "外部の編集");
         assert_eq!(current.revision, revision(EXTERNAL));
         assert_eq!(fs::read_to_string(&path).unwrap(), EXTERNAL);
-        assert!(recovery_paths(directory.path()).is_empty());
+        assert_eq!(recovery_paths(directory.path()), Vec::<PathBuf>::new());
     }
 
     #[test]
@@ -281,7 +281,7 @@ mod tests {
             };
             assert_eq!(note.id, "note.txt");
             assert_eq!(fs::read_to_string(&path).unwrap(), content);
-            assert!(recovery_paths(directory.path()).is_empty());
+            assert_eq!(recovery_paths(directory.path()), Vec::<PathBuf>::new());
             expected = note.revision;
         }
     }
@@ -301,7 +301,7 @@ mod tests {
         assert_eq!(current.id, "note.txt");
         assert_eq!(current.revision, revision(THIRD));
         assert_eq!(fs::read_to_string(&path).unwrap(), THIRD);
-        assert!(recovery_paths(directory.path()).is_empty());
+        assert_eq!(recovery_paths(directory.path()), Vec::<PathBuf>::new());
     }
 
     #[test]
@@ -321,7 +321,7 @@ mod tests {
         };
         assert_eq!(note.id, "note.txt");
         assert_eq!(fs::read_to_string(&path).unwrap(), LOCAL);
-        assert!(recovery_paths(directory.path()).is_empty());
+        assert_eq!(recovery_paths(directory.path()), Vec::<PathBuf>::new());
     }
 
     #[test]
@@ -473,7 +473,7 @@ mod tests {
         assert!(save_note_at_path(&input, &path).is_err());
         assert!(fs::symlink_metadata(&path).unwrap().is_symlink());
         assert_eq!(fs::read_to_string(&target).unwrap(), ORIGINAL);
-        assert!(recovery_paths(directory.path()).is_empty());
+        assert_eq!(recovery_paths(directory.path()), Vec::<PathBuf>::new());
     }
 
     #[test]
