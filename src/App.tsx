@@ -6,6 +6,7 @@ import { SaveStatus } from "./components/SaveStatus";
 import { filterNotes, findLatestNote } from "./note-search";
 import { useNavigationHistory } from "./use-navigation-history";
 import type { NoteDocument, NoteSummary } from "./types";
+import { useShutdownGuard } from "./use-shutdown-guard";
 import {
   type AbortedNavigation,
   type NavigationResult,
@@ -84,6 +85,11 @@ export function App() {
         ? { document: result.note, status: "saved" }
         : { current: result.current, status: "conflict" };
     },
+  });
+
+  const shutdownReady = useShutdownGuard({
+    onError: (shutdownError) => { setError(String(shutdownError)); },
+    requestNavigation: noteAutosave.requestNavigation,
   });
 
   const {
@@ -342,6 +348,17 @@ export function App() {
     loadDocument(null);
     setError(null);
   };
+
+  if (!shutdownReady) {
+    return (
+      <main className="empty-view">
+        <div>
+          <h1>終了時保存を準備しています…</h1>
+          {error && <p className="error-message">{error}</p>}
+        </div>
+      </main>
+    );
+  }
 
   if (!vault) {
     return (
