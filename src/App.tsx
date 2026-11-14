@@ -4,6 +4,7 @@ import { DocumentEditor } from "./components/DocumentEditor";
 import { EditConflictDialog } from "./components/EditConflictDialog";
 import { SaveStatus } from "./components/SaveStatus";
 import { filterNotes, findLatestNote } from "./note-search";
+import { useNavigationHistory } from "./use-navigation-history";
 import type { NoteDocument, NoteSummary } from "./types";
 import {
   type AbortedNavigation,
@@ -22,6 +23,7 @@ export function App() {
   const notesScope = useRef({ isChangingVault: false });
   const notesRequestGeneration = useRef(0);
   const appliedNotesRequestGeneration = useRef(0);
+  const { canGoBack, canGoForward, destination, move, reset: resetHistory, visit } = useNavigationHistory();
 
   const replaceNotes = useCallback((next: NoteSummary[]) => {
     notesRef.current = next;
@@ -104,9 +106,12 @@ export function App() {
   const loadDocument = useCallback(
     (note: NoteDocument | null) => {
       invalidateExternalRead();
+      if (!note) {
+        resetHistory();
+      }
       load(note);
     },
-    [invalidateExternalRead, load],
+    [invalidateExternalRead, load, resetHistory],
   );
 
   useEffect(() => {
@@ -232,6 +237,7 @@ export function App() {
         setVault(selected);
         replaceNotes(selectedNotes);
         loadDocument(null);
+        setSearch("");
         setError(null);
       } finally {
         notesScope.current = { isChangingVault: !canRefresh };
@@ -244,6 +250,7 @@ export function App() {
       const note = await api.readNote(id);
       if (isCurrent()) {
         loadDocument(note);
+        visit(note.id, search, search);
       }
     });
   };
@@ -259,6 +266,7 @@ export function App() {
         return;
       }
       loadDocument(note);
+      visit(note.id, search, search);
     });
   };
 
@@ -267,14 +275,34 @@ export function App() {
       if (!isCurrent()) {
         return;
       }
-      setSearch(link);
       const latest = findLatestNote(filterNotes(notesRef.current, link));
       if (!latest || latest.id === draft?.id) {
+        setSearch(link);
+        if (draft) {
+          visit(draft.id, search, link);
+        }
         return;
       }
       const note = await api.readNote(latest.id);
       if (isCurrent()) {
         loadDocument(note);
+        visit(note.id, search, link);
+        setSearch(link);
+      }
+    });
+  };
+
+  const moveInHistory = (offset: -1 | 1) => {
+    const target = destination(offset);
+    if (!target) {
+      return;
+    }
+    requestEditorNavigation(async (isCurrent) => {
+      const note = await api.readNote(target.entry.noteId);
+      if (isCurrent() && move(target, search)) {
+        loadDocument(note);
+        setSearch(target.entry.search);
+        setError(null);
       }
     });
   };
@@ -344,6 +372,24 @@ export function App() {
             ⋯
           </button>
         </header>
+        <nav className="history-navigation" aria-label="メモの移動履歴">
+          <button
+            aria-label="戻る"
+            disabled={!canGoBack || conflict !== null}
+            onClick={() => { moveInHistory(-1); }}
+            title="前のメモに戻る"
+          >
+            ← 戻る
+          </button>
+          <button
+            aria-label="進む"
+            disabled={!canGoForward || conflict !== null}
+            onClick={() => { moveInHistory(1); }}
+            title="次のメモに進む"
+          >
+            進む →
+          </button>
+        </nav>
         <div className="search-box">
           <span>⌕</span>
           <input
