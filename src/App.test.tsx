@@ -155,6 +155,233 @@ async function editBody(container: HTMLElement, body: string) {
 }
 
 describe(App, () => {
+  it("保存先変更後に完了した旧保存先の一覧を反映しない", async () => {
+    resetTest();
+    mockVault([source]);
+    const oldPoll = deferred<NoteSummary[]>();
+    vi.mocked(api.listNotes)
+      .mockReset()
+      .mockResolvedValueOnce([summaryOf(source)])
+      .mockReturnValueOnce(oldPoll.promise)
+      .mockResolvedValue([summaryOf(newest)]);
+    vi.mocked(api.chooseVault).mockResolvedValue("/vault-new");
+    vi.mocked(api.setVault).mockImplementation(async () => { await Promise.resolve(); });
+    vi.useFakeTimers();
+    await act(async () => {
+      render(<App />);
+      await Promise.resolve();
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(2500));
+
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("保存先を変更"));
+      await Promise.resolve();
+    });
+    expect(screen.getByTitle("/vault-new")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /最新のりんご/u })).toBeInTheDocument();
+    await act(async () => {
+      oldPoll.resolve([summaryOf(source)]);
+      await oldPoll.promise;
+    });
+
+    expect(screen.getByRole("button", { name: /最新のりんご/u })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /リンク元/u })).not.toBeInTheDocument();
+  });
+
+  it("同じ保存先でも新しい一覧の後に完了した古いポーリング応答を反映しない", async () => {
+    resetTest();
+    mockVault([source]);
+    const oldPoll = deferred<NoteSummary[]>();
+    vi.mocked(api.listNotes)
+      .mockReset()
+      .mockResolvedValueOnce([summaryOf(source)])
+      .mockReturnValueOnce(oldPoll.promise)
+      .mockResolvedValue([summaryOf(newest)]);
+    vi.useFakeTimers();
+    await act(async () => {
+      render(<App />);
+      await Promise.resolve();
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(5000));
+    expect(screen.getByRole("button", { name: /最新のりんご/u })).toBeInTheDocument();
+
+    await act(async () => {
+      oldPoll.resolve([summaryOf(older)]);
+      await oldPoll.promise;
+    });
+
+    expect(screen.getByRole("button", { name: /最新のりんご/u })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /古いりんご/u })).not.toBeInTheDocument();
+  });
+
+  it("保存先選択のキャンセルでは進行中の一覧取得を無効にしない", async () => {
+    resetTest();
+    mockVault([source]);
+    const poll = deferred<NoteSummary[]>();
+    vi.mocked(api.listNotes)
+      .mockReset()
+      .mockResolvedValueOnce([summaryOf(source)])
+      .mockReturnValueOnce(poll.promise);
+    vi.mocked(api.chooseVault).mockResolvedValue(null);
+    vi.useFakeTimers();
+    await act(async () => {
+      render(<App />);
+      await Promise.resolve();
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(2500));
+
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("保存先を変更"));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      poll.resolve([summaryOf(newest)]);
+      await poll.promise;
+    });
+
+    expect(api.setVault).not.toHaveBeenCalled();
+    expect(screen.getByTitle("/vault")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /最新のりんご/u })).toBeInTheDocument();
+  });
+
+  it("保存先の変更途中はポーリングを開始しない", async () => {
+    resetTest();
+    mockVault([source]);
+    const selectedNotes = deferred<NoteSummary[]>();
+    vi.mocked(api.listNotes)
+      .mockReset()
+      .mockResolvedValueOnce([summaryOf(source)])
+      .mockReturnValueOnce(selectedNotes.promise)
+      .mockResolvedValue([summaryOf(newest)]);
+    vi.mocked(api.chooseVault).mockResolvedValue("/vault-new");
+    vi.mocked(api.setVault).mockImplementation(async () => { await Promise.resolve(); });
+    vi.useFakeTimers();
+    await act(async () => {
+      render(<App />);
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("保存先を変更"));
+      await Promise.resolve();
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(5000));
+    expect(api.listNotes).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      selectedNotes.resolve([summaryOf(newest)]);
+      await selectedNotes.promise;
+    });
+    expect(screen.getByTitle("/vault-new")).toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTimeAsync(2500));
+    expect(api.listNotes).toHaveBeenCalledTimes(3);
+  });
+
+  it("選択先の一覧取得に失敗したら旧保存先へ戻しポーリングを再開する", async () => {
+    resetTest();
+    mockVault([source]);
+    const oldPoll = deferred<NoteSummary[]>();
+    vi.mocked(api.listNotes)
+      .mockReset()
+      .mockResolvedValueOnce([summaryOf(source)])
+      .mockReturnValueOnce(oldPoll.promise)
+      .mockRejectedValueOnce(new Error("selected list failed"))
+      .mockResolvedValue([summaryOf(source)]);
+    vi.mocked(api.chooseVault).mockResolvedValue("/vault-new");
+    vi.mocked(api.setVault).mockImplementation(async () => { await Promise.resolve(); });
+    vi.useFakeTimers();
+    await act(async () => {
+      render(<App />);
+      await Promise.resolve();
+    });
+    await act(async () => vi.advanceTimersByTimeAsync(2500));
+
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("保存先を変更"));
+      await Promise.resolve();
+    });
+    expect({
+      error: screen.queryByText("Error: selected list failed") !== null,
+      setVaultCalls: vi.mocked(api.setVault).mock.calls,
+      vault: screen.getByTitle("/vault").getAttribute("title"),
+    }).toStrictEqual({
+      error: true,
+      setVaultCalls: [["/vault-new"], ["/vault"]],
+      vault: "/vault",
+    });
+    await act(async () => {
+      oldPoll.resolve([summaryOf(older)]);
+      await oldPoll.promise;
+    });
+    expect({
+      older: screen.queryByRole("button", { name: /古いりんご/u }) !== null,
+      source: screen.queryByRole("button", { name: /リンク元/u }) !== null,
+    }).toStrictEqual({ older: false, source: true });
+    await act(async () => vi.advanceTimersByTimeAsync(2500));
+    expect(api.listNotes).toHaveBeenCalledTimes(4);
+  });
+
+  it("保存先の復元に失敗したら編集画面を閉じ再選択後にだけ編集を再開する", async () => {
+    resetTest();
+    mockVault([source]);
+    vi.mocked(api.listNotes)
+      .mockReset()
+      .mockResolvedValueOnce([summaryOf(source)])
+      .mockRejectedValueOnce(new Error("selected list failed"))
+      .mockResolvedValue([summaryOf(newest)]);
+    vi.mocked(api.chooseVault).mockResolvedValueOnce("/vault-new").mockResolvedValue("/vault-restored");
+    vi.mocked(api.setVault)
+      .mockImplementationOnce(async () => { await Promise.resolve(); })
+      .mockRejectedValueOnce(new Error("rollback failed"))
+      .mockImplementation(async () => { await Promise.resolve(); });
+    vi.useFakeTimers();
+    await act(async () => {
+      render(<App />);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /リンク元/u }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("保存先を変更"));
+      await Promise.resolve();
+    });
+    expect({
+      error: screen.queryByText(/保存先を確認できないため、保存先を選び直してください/u) !== null,
+      title: screen.queryByRole("textbox", { name: "タイトル" }),
+      welcome: screen.queryByRole("button", { name: "メモの保存先を選ぶ" }) !== null,
+    }).toStrictEqual({ error: true, title: null, welcome: true });
+    await act(async () => vi.advanceTimersByTimeAsync(5000));
+    expect(api.saveNote).not.toHaveBeenCalled();
+    vi.mocked(api.readNote).mockResolvedValue(newest);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "メモの保存先を選ぶ" }));
+      await Promise.resolve();
+    });
+    expect({
+      vault: screen.getByTitle("/vault-restored").getAttribute("title"),
+      warning: screen.queryByText(/保存先を確認できないため、保存先を選び直してください/u),
+    }).toStrictEqual({ vault: "/vault-restored", warning: null });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /最新のりんご/u }));
+      await Promise.resolve();
+    });
+    const saved = { ...newest, revision: "newest-r2", title: "復旧後の編集" };
+    vi.mocked(api.saveNote).mockResolvedValue({ note: saved, status: "saved" });
+    vi.mocked(api.listNotes).mockResolvedValue([summaryOf(saved)]);
+    fireEvent.change(screen.getByRole("textbox", { name: "タイトル" }), { target: { value: saved.title } });
+    await act(async () => vi.advanceTimersByTimeAsync(700));
+
+    expect(api.saveNote).toHaveBeenCalledExactlyOnceWith({
+      body: newest.body,
+      expectedRevision: newest.revision,
+      id: newest.id,
+      title: saved.title,
+    });
+    expect(screen.getByText("保存済み")).toBeInTheDocument();
+  });
+
   it("wikiリンク検索と同じ候補から更新日時が最も新しいメモを開く", async () => {
     resetTest();
     mockVault();
@@ -339,7 +566,8 @@ describe(App, () => {
       overwrite: true,
       title: baseNote.title,
     });
-    await expect(screen.findByText("保存済み")).resolves.toBeInTheDocument();
+    const savedStatus = await screen.findByText("保存済み");
+    expect(savedStatus).toBeInTheDocument();
   });
 
   it("未保存の通常メモを即時保存してから選択先へ移動する", async () => {
@@ -372,7 +600,8 @@ describe(App, () => {
       finishSave({ note: { ...baseNote, body: "移動前の編集", revision: "revision-2" }, status: "saved" });
       await pendingSave;
     });
-    await expect(screen.findByRole("textbox", { name: "タイトル" })).resolves.toHaveValue(nextDocument.title);
+    const nextTitleInput = await screen.findByRole("textbox", { name: "タイトル" });
+    expect(nextTitleInput).toHaveValue(nextDocument.title);
     expect(api.readNote).toHaveBeenLastCalledWith(nextDocument.id);
   });
 
@@ -394,7 +623,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByRole("button", { name: /次のメモ/u }));
 
-    await expect(screen.findByText("Error: refresh failed")).resolves.toBeInTheDocument();
+    const refreshError = await screen.findByText("Error: refresh failed");
+
+    expect(refreshError).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
     expect(api.readNote).toHaveBeenCalledExactlyOnceWith(baseNote.id);
   });
@@ -450,7 +681,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByTitle("保存先を変更"));
 
-    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+    const conflictDialog = await screen.findByRole("dialog");
+
+    expect(conflictDialog).toBeInTheDocument();
     expect(api.chooseVault).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
   });
@@ -468,7 +701,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByTitle("保存先を変更"));
 
-    await expect(screen.findByText("Error: save failed")).resolves.toBeInTheDocument();
+    const saveError = await screen.findByText("Error: save failed");
+
+    expect(saveError).toBeInTheDocument();
     expect(api.chooseVault).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
   });
@@ -516,7 +751,8 @@ describe(App, () => {
       deletes: [],
     });
     fireEvent.click(screen.getByRole("button", { name: /次のメモ/u }));
-    await expect(screen.findByRole("textbox", { name: "タイトル" })).resolves.toHaveValue(nextDocument.title);
+    const nextTitleInput = await screen.findByRole("textbox", { name: "タイトル" });
+    expect(nextTitleInput).toHaveValue(nextDocument.title);
     fireEvent.click(screen.getByTitle("保存先を変更"));
     await waitFor(() => {
       expect({ saves: vi.mocked(api.saveNote).mock.calls.length, selections: vi.mocked(api.chooseVault).mock.calls }).toStrictEqual({ saves: 2, selections: [[]] });
@@ -573,11 +809,14 @@ describe(App, () => {
 
     fireEvent.click(screen.getByRole("button", { name: "保存を再試行" }));
 
-    await expect(screen.findByText("Error: retry failed")).resolves.toBeInTheDocument();
+    const retryError = await screen.findByText("Error: retry failed");
+
+    expect(retryError).toBeInTheDocument();
     const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!);
     expect(view?.state.doc.toString()).toBe(saved.body);
     fireEvent.click(screen.getByRole("button", { name: "保存を再試行" }));
-    await expect(screen.findByText("保存済み")).resolves.toBeInTheDocument();
+    const savedStatus = await screen.findByText("保存済み");
+    expect(savedStatus).toBeInTheDocument();
     expect(api.saveNote).toHaveBeenLastCalledWith({
       body: saved.body,
       expectedRevision: baseNote.revision,
@@ -606,7 +845,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByRole("button", { name: "保存を再試行" }));
 
-    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+    const conflictDialog = await screen.findByRole("dialog");
+
+    expect(conflictDialog).toBeInTheDocument();
     expect({ discard: screen.queryByRole("button", { name: "編集を破棄して閉じる" }), retry: screen.queryByRole("button", { name: "保存を再試行" }) }).toStrictEqual({ discard: null, retry: null });
     expect(api.saveNote).toHaveBeenCalledTimes(2);
     expect(api.chooseVault).not.toHaveBeenCalled();
@@ -669,7 +910,8 @@ describe(App, () => {
     await waitFor(() => {
       expect(api.deleteNote).toHaveBeenCalledExactlyOnceWith(baseNote.id);
     });
-    await expect(screen.findByText("メモを選んでください")).resolves.toBeInTheDocument();
+    const emptyEditor = await screen.findByText("メモを選んでください");
+    expect(emptyEditor).toBeInTheDocument();
   });
 
   it("進行中の保存を完了してから確認済みメモをゴミ箱へ移動する", async () => {
@@ -716,7 +958,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByRole("button", { name: "ゴミ箱へ" }));
 
-    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+    const conflictDialog = await screen.findByRole("dialog");
+
+    expect(conflictDialog).toBeInTheDocument();
     expect(api.deleteNote).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
   });
@@ -735,7 +979,9 @@ describe(App, () => {
 
     fireEvent.click(screen.getByRole("button", { name: "ゴミ箱へ" }));
 
-    await expect(screen.findByText("Error: save failed")).resolves.toBeInTheDocument();
+    const saveError = await screen.findByText("Error: save failed");
+
+    expect(saveError).toBeInTheDocument();
     expect(api.deleteNote).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
   });

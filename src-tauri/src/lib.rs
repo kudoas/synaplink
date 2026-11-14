@@ -127,7 +127,14 @@ fn unique_links(content: &str) -> Vec<LinkReference> {
 }
 
 fn revision(content: &str) -> String {
-    format!("{:x}", Sha256::digest(content.as_bytes()))
+    const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let digest = Sha256::digest(content.as_bytes());
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+    }
+    encoded
 }
 
 fn modified_at(path: &Path) -> Result<u64, String> {
@@ -400,6 +407,18 @@ pub fn run() {
 mod tests {
     use super::*;
     use std::{thread, time::Duration};
+
+    #[test]
+    fn revisions_preserve_known_sha256_values() {
+        assert_eq!(
+            revision(""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            revision("本文 [[りんご]]"),
+            "9181859905b5db4bbe4c57c1a4356a5e7481e031c307b56c7fdca57eb84afdd9"
+        );
+    }
 
     #[test]
     fn extracts_trimmed_wikilinks_and_ignores_legacy_tags() {
