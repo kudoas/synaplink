@@ -94,7 +94,8 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenLink, re
               view.compositionStarted ||
               selection.ranges.length !== 1 ||
               !selection.main.empty ||
-              view.state.doc.lineAt(selection.main.head).number !== 1
+              view.state.doc.lineAt(selection.main.head).number !== 1 ||
+              view.moveToLineBoundary(selection.main, false, true).head !== 0
             ) {
               return false;
             }
