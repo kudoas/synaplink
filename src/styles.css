@@ -53,6 +53,14 @@ button { color: inherit; }
 
 .search-box { display: flex; align-items: center; gap: 7px; margin: 4px 16px 10px; padding: 9px 11px; color: var(--muted); background: rgba(255,255,255,.48); border: 1px solid var(--line); border-radius: 8px; }
 .search-box input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); }
+
+.search-hint {
+  margin: 0 16px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .new-note-button { margin: 0 16px 12px; padding: 9px 12px; border: 1px solid rgba(182,78,49,.28); border-radius: 8px; color: var(--accent); background: rgba(255,255,255,.3); text-align: left; cursor: pointer; font-weight: 600; }
 .new-note-button:hover { background: var(--accent-soft); }
 .new-note-button span { margin-right: 5px; }
@@ -113,11 +121,4 @@ button { color: inherit; }
 
 @media (max-width: 980px) {
   .app-shell { grid-template-columns: 235px minmax(420px, 1fr); }
-}
-
-.search-hint {
-  margin: 0 16px 12px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
 }
