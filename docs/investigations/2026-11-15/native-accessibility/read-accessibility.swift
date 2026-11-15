@@ -26,11 +26,18 @@ var nodeCount = 0
 var truncated = false
 func readableAttributes(_ element: AXUIElement) -> [String: Any] {
     var result: [String: Any] = [:]
-    for key in ["AXRole", "AXSubrole", "AXTitle", "AXDescription", "AXHelp", "AXEnabled", "AXFocused", "AXValue"] {
+    for key in ["AXRole", "AXRoleDescription", "AXSubrole", "AXTitle", "AXDescription", "AXHelp", "AXEnabled", "AXFocused", "AXValue", "AXSelectedText"] {
         if let value = attribute(element, key) {
             let text = String(describing: value)
             result[key] = String(text.prefix(2048))
             if text.count > 2048 { truncated = true }
+        }
+    }
+    if let rawRange = attribute(element, "AXSelectedTextRange"), CFGetTypeID(rawRange) == AXValueGetTypeID() {
+        let value = rawRange as! AXValue
+        var range = CFRange()
+        if AXValueGetType(value) == .cfRange && AXValueGetValue(value, .cfRange, &range) {
+            result["AXSelectedTextRange"] = ["length": range.length, "location": range.location]
         }
     }
     return result

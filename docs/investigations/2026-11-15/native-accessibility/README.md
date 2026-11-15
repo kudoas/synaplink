@@ -19,6 +19,14 @@ macOS は2回とも 27.2 / build 26B123、システム WebKit bundle は `22625.
 
 `NSWorkspace.isVoiceOverEnabled` は VoiceOver が動作中かを返す。[Apple の定義](https://developer.apple.com/documentation/appkit/nsworkspace/isvoiceoverenabled)に従い、停止中という事実だけを記録した。`AXIsProcessTrusted` は[呼び出したプロセスの信頼状態](https://developer.apple.com/documentation/applicationservices/1460720-axisprocesstrusted)であり、CUA の権限や VoiceOver の読み上げ能力を測る API ではない。
 
+## テストアプリの新規作成後はタイトルにフォーカスがあった
+
+親担当が CUA で release A の新規作成をクリックした直後、`2026-11-15T08:19:28Z` に読み取り専用 AX snapshot を取得した。対象は `/private/tmp/synaplink-native-shutdown/apps-release/Synaplink Shutdown Audit.app`、bundle identifier `com.kudoas.synaplink.audit.shutdown`、PID `74396`。helper で PID と identifier の一致を確認してから読み取った。本物の `com.kudoas.synaplink` は対象にしていない。
+
+[フォーカス属性の抜粋](evidence/release-a-new-note-focus.json)は `AXRole=AXTextField`、`AXTitle=タイトル`、`AXDescription=タイトル`、`AXValue=無題`、`AXFocused=1` だった。全体の snapshot は218ノード、`truncated=false`。親担当の「新規作成後のタイトル全選択」という CUA 観測と操作順が一致した。初回 helper は選択範囲を取得していないため、全選択の根拠は親担当の CUA 観測と区別する。後続の helper には選択文字列と範囲の読み取りを追加した。
+
+この1回は新規作成後にタイトルへフォーカスしたことを確認する。変換中のキー処理、競合解決後の復帰、VoiceOver の読み上げはまだ確認していない。取得後、親担当がこのテストアプリを終了したため、同じ PID への追加照会はしていない。
+
 ## agent-browser の確認だけで macOS WebKit 検証済みとは扱わない
 
 インストール済み agent-browser は `0.42.0`。スキルと CLI の `--help`、同梱 README を確認した。デスクトップの公開された engine 指定は `chrome`、`lightpanda`、`obscura` で、README の WebKit 操作経路は iOS Simulator の Mobile Safari である。[公式の iOS 手順](https://agent-browser.dev/ios)は Xcode、Simulator runtime、Appium と XCUITest driver を必要とする。
@@ -53,7 +61,7 @@ swift -module-cache-path /private/tmp/synaplink-native-module-cache \
   docs/investigations/2026-11-15/native-accessibility/read-environment.swift
 ```
 
-指定したテストアプリの AX tree を読む [read-accessibility.swift](read-accessibility.swift)も用意した。PID と bundle identifier の完全一致を確認し、元の `com.kudoas.synaplink` は拒否する。AX 属性の設定や操作は行わない。Swift の `-warnings-as-errors` でコンパイル成功、元 bundle と PID 不一致の拒否を確認した。まだテストアプリの AX 出力は取得していない。
+指定したテストアプリの AX tree を読む [read-accessibility.swift](read-accessibility.swift)も用意した。PID と bundle identifier の完全一致を確認し、元の `com.kudoas.synaplink` は拒否する。AX 属性の設定や操作は行わない。Swift の `-warnings-as-errors` でコンパイル成功、元 bundle と PID 不一致の拒否を確認した。上記の release A の snapshot はこの helper で取得した。
 
 ```sh
 swiftc -warnings-as-errors -module-cache-path /private/tmp/synaplink-native-module-cache \
@@ -64,4 +72,4 @@ swiftc -warnings-as-errors -module-cache-path /private/tmp/synaplink-native-modu
 
 最大500ノード、深さ12、各属性2048文字に制限する。制限に達した結果には `truncated=true` を付ける。部分的な AX tree に背景要素が見えないことだけでは、背景操作の抑止や VoiceOver の読み上げを確認できない。
 
-この調査はドキュメントと読み取りスクリプトのみの変更で、アプリの動作を変えない。frontend の依存インストールやアプリ試験の再実行はしていない。実機のキー操作・VoiceOver の結果が揃うまで、対応状況の完了条件は未達のままとする。
+この調査はドキュメントと読み取りスクリプトのみの変更で、アプリの動作を変えない。frontend の依存インストールや自動アプリ試験の再実行はしていない。実機のキー操作・VoiceOver の結果が揃うまで、対応状況の完了条件は未達のままとする。
