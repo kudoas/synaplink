@@ -15,6 +15,20 @@ describe("note api", () => {
     expect(invoke).toHaveBeenCalledExactlyOnceWith("save_note", { input });
   });
 
+  it("一覧の部分読込失敗を同じ応答のコールバックへ渡す", async () => {
+    const issues = [{ message: "invalid UTF-8", path: "/vault/invalid.txt" }];
+    const notes = [{ id: "valid.txt" }];
+    vi.mocked(invoke).mockReset().mockResolvedValue({ issues, notes });
+    const onIssues = vi.fn();
+
+    const result = await api.listNotes(onIssues);
+
+    expect(result).toStrictEqual(notes);
+    expect(onIssues).toHaveBeenCalledExactlyOnceWith(issues);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("list_notes");
+    await expect(api.listNotes()).resolves.toStrictEqual(notes);
+  });
+
   it("タグメモとタグ検索APIを公開しない", () => {
     expect(Object.keys(api)).not.toStrictEqual(expect.arrayContaining(["readTagMemo", "saveTagMemo", "searchTag"]));
   });
