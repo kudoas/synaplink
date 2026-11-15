@@ -451,8 +451,9 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), LOCAL);
         assert_eq!(fs::read_to_string(&recoveries[0]).unwrap(), ORIGINAL);
         let notes = crate::scan_notes(directory.path()).unwrap();
-        assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].id, "note.txt");
+        assert_eq!(notes.notes.len(), 1);
+        assert_eq!(notes.notes[0].id, "note.txt");
+        assert_eq!(notes.issues.len(), 0);
     }
 
     #[test]

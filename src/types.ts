@@ -12,6 +12,16 @@ export interface NoteSummary {
   links: LinkReference[];
 }
 
+export interface NoteScanIssue {
+  path: string;
+  message: string;
+}
+
+export interface NoteScanResult {
+  notes: NoteSummary[];
+  issues: NoteScanIssue[];
+}
+
 export interface NoteDocument {
   id: string;
   title: string;

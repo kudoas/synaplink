@@ -5,7 +5,7 @@ import { EditConflictDialog } from "./components/EditConflictDialog";
 import { SaveStatus } from "./components/SaveStatus";
 import { filterNotes, findLatestNote } from "./note-search";
 import { useNavigationHistory } from "./use-navigation-history";
-import type { NoteDocument, NoteSummary } from "./types";
+import type { NoteDocument, NoteScanIssue, NoteSummary } from "./types";
 import { useShutdownGuard } from "./use-shutdown-guard";
 import {
   type AbortedNavigation,
@@ -16,6 +16,7 @@ import {
 export function App() {
   const [vault, setVault] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteSummary[]>([]);
+  const [scanIssues, setScanIssues] = useState<NoteScanIssue[]>([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const externalReadGeneration = useRef(0);
@@ -26,9 +27,10 @@ export function App() {
   const appliedNotesRequestGeneration = useRef(0);
   const { canGoBack, canGoForward, destination, move, reset: resetHistory, visit } = useNavigationHistory();
 
-  const replaceNotes = useCallback((next: NoteSummary[]) => {
+  const replaceNotes = useCallback((next: NoteSummary[], issues: NoteScanIssue[] = []) => {
     notesRef.current = next;
     setNotes(next);
+    setScanIssues(issues);
   }, []);
 
   const loadNotes = useCallback(async () => {
@@ -39,10 +41,11 @@ export function App() {
     const generation = notesRequestGeneration.current + 1;
     notesRequestGeneration.current = generation;
     try {
-      const next = await api.listNotes();
+      let issues: NoteScanIssue[] = [];
+      const next = await api.listNotes((reportedIssues) => { issues = reportedIssues; });
       if (notesScope.current === scope && generation >= appliedNotesRequestGeneration.current) {
         appliedNotesRequestGeneration.current = generation;
-        replaceNotes(next);
+        replaceNotes(next, issues);
       }
     } catch (error) {
       if (notesScope.current === scope && generation >= appliedNotesRequestGeneration.current) {
@@ -227,7 +230,8 @@ export function App() {
         if (!isCurrent()) {
           return await restoreVault();
         }
-        const selectedNotes = await api.listNotes().catch(async (error: unknown) => {
+        let issues: NoteScanIssue[] = [];
+        const selectedNotes = await api.listNotes((reportedIssues) => { issues = reportedIssues; }).catch(async (error: unknown) => {
           const abort = await restoreVault();
           if (abort) {
             return abort;
@@ -241,7 +245,7 @@ export function App() {
           return await restoreVault();
         }
         setVault(selected);
-        replaceNotes(selectedNotes);
+        replaceNotes(selectedNotes, issues);
         loadDocument(null);
         setSearch("");
         setError(null);
@@ -444,6 +448,16 @@ export function App() {
             </p>
           )}
         </div>
+        {scanIssues.length > 0 && (
+          <section className="note-scan-warning" role="status" aria-label="メモ一覧の読込警告">
+            <p>読み込めない項目があります（{scanIssues.length}件）。読み込めたメモは利用できます。</p>
+            <details>
+              <summary>対象と理由を表示</summary>
+              <pre>{scanIssues.map((issue) => `${issue.path}\n${issue.message}`).join("\n\n")}</pre>
+            </details>
+            <button type="button" onClick={() => { void refreshNotes(); }}>一覧を再読込</button>
+          </section>
+        )}
         <footer className="vault-path" title={vault}>
           ◉ {vault.split("/").pop()}
         </footer>

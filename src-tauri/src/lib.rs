@@ -45,6 +45,20 @@ pub struct NoteSummary {
     pub links: Vec<LinkReference>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteScanIssue {
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteScanResult {
+    pub notes: Vec<NoteSummary>,
+    pub issues: Vec<NoteScanIssue>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteDocument {
@@ -240,20 +254,59 @@ fn store_settings(app: &AppHandle, settings: &Settings) -> Result<(), String> {
     fs::write(settings_path(app)?, raw).map_err(|error| format!("設定を保存できません: {error}"))
 }
 
-fn scan_notes(vault: &Path) -> Result<Vec<NoteSummary>, String> {
+fn collect_notes(
+    vault: &Path,
+    entries: impl IntoIterator<Item = std::io::Result<PathBuf>>,
+) -> NoteScanResult {
+    let mut result = NoteScanResult::default();
+    for entry in entries {
+        let path = match entry {
+            Ok(path) => path,
+            Err(error) => {
+                result.issues.push(NoteScanIssue {
+                    path: vault.to_string_lossy().into_owned(),
+                    message: format!("フォルダ内の項目を列挙できません: {error}"),
+                });
+                continue;
+            }
+        };
+        if path.extension().and_then(|value| value.to_str()) != Some("txt") {
+            continue;
+        }
+        let metadata = match fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                result.issues.push(NoteScanIssue {
+                    path: path.to_string_lossy().into_owned(),
+                    message: format!("ファイルの状態を取得できません: {error}"),
+                });
+                continue;
+            }
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        match document_from_path(&path) {
+            Ok(note) => result.notes.push(summary_from_document(note)),
+            Err(error) => result.issues.push(NoteScanIssue {
+                path: path.to_string_lossy().into_owned(),
+                message: error,
+            }),
+        }
+    }
+    result
+        .notes
+        .sort_by_key(|note| std::cmp::Reverse(note.modified_at));
+    result
+}
+
+fn scan_notes(vault: &Path) -> Result<NoteScanResult, String> {
     let entries =
         fs::read_dir(vault).map_err(|error| format!("保存先フォルダを読み込めません: {error}"))?;
-    let mut notes = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.is_file() && path.extension().and_then(|value| value.to_str()) == Some("txt")
-        })
-        .filter_map(|path| document_from_path(&path).ok())
-        .map(summary_from_document)
-        .collect::<Vec<_>>();
-    notes.sort_by_key(|note| std::cmp::Reverse(note.modified_at));
-    Ok(notes)
+    Ok(collect_notes(
+        vault,
+        entries.map(|entry| entry.map(|value| value.path())),
+    ))
 }
 
 fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
@@ -305,7 +358,7 @@ fn set_vault(path: String, app: AppHandle, state: State<'_, AppState>) -> Result
 }
 
 #[tauri::command]
-fn list_notes(state: State<'_, AppState>) -> Result<Vec<NoteSummary>, String> {
+fn list_notes(state: State<'_, AppState>) -> Result<NoteScanResult, String> {
     scan_notes(&current_vault(&state)?)
 }
 
@@ -399,6 +452,90 @@ pub fn run() {
 mod tests {
     use super::*;
     use std::{thread, time::Duration};
+
+    #[test]
+    fn reports_invalid_utf8_without_hiding_valid_notes_or_modifying_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let valid = directory.path().join("valid.txt");
+        let invalid = directory.path().join("invalid.txt");
+        fs::write(&valid, "題名\n本文").unwrap();
+        fs::write(&invalid, [0xff]).unwrap();
+
+        let result = serde_json::to_value(scan_notes(directory.path()).unwrap()).unwrap();
+
+        assert!(result.is_object());
+        assert_eq!(result["notes"].as_array().unwrap().len(), 1);
+        assert_eq!(result["notes"][0]["id"], "valid.txt");
+        assert_eq!(result["issues"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            result["issues"][0]["path"],
+            invalid.to_string_lossy().as_ref()
+        );
+        assert!(result["issues"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("UTF-8"));
+        assert_eq!(fs::read(&invalid).unwrap(), [0xff]);
+        assert_eq!(fs::read_to_string(&valid).unwrap(), "題名\n本文");
+    }
+
+    #[test]
+    fn reports_entry_enumeration_errors_without_dropping_valid_notes() {
+        let directory = tempfile::tempdir().unwrap();
+        let valid = directory.path().join("valid.txt");
+        fs::write(&valid, "題名\n本文").unwrap();
+        let entries = [Ok(valid), Err(std::io::Error::other("entry unavailable"))];
+
+        let result = collect_notes(directory.path(), entries);
+
+        assert_eq!(result.notes.len(), 1);
+        assert_eq!(result.notes[0].id, "valid.txt");
+        assert_eq!(result.issues.len(), 1);
+        assert_eq!(result.issues[0].path, directory.path().to_string_lossy());
+        assert!(result.issues[0].message.contains("entry unavailable"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keeps_valid_symlink_reads_and_ignores_non_notes_while_reporting_broken_links() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("target.txt");
+        let broken = directory.path().join("broken.txt");
+        fs::write(directory.path().join("valid.txt"), "題名\n本文").unwrap();
+        fs::write(&target, "リンク先\n本文").unwrap();
+        symlink(&target, directory.path().join("link.txt")).unwrap();
+        symlink(outside.path().join("missing.txt"), &broken).unwrap();
+        fs::create_dir(directory.path().join("folder.txt")).unwrap();
+        fs::write(directory.path().join("ignored.bin"), [0xff]).unwrap();
+
+        let result = scan_notes(directory.path()).unwrap();
+
+        assert_eq!(result.notes.len(), 2);
+        assert!(result.notes.iter().any(|note| note.id == "link.txt"));
+        assert_eq!(result.issues.len(), 1);
+        assert_eq!(result.issues[0].path, broken.to_string_lossy());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "リンク先\n本文");
+    }
+
+    #[test]
+    fn a_vault_with_only_invalid_notes_returns_issues_instead_of_an_empty_success() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("invalid.txt"), [0xff]).unwrap();
+
+        let result = scan_notes(directory.path()).unwrap();
+
+        assert_eq!(result.notes.len(), 0);
+        assert_eq!(result.issues.len(), 1);
+    }
+
+    #[test]
+    fn an_unreadable_vault_root_still_returns_an_error() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(scan_notes(&directory.path().join("missing")).is_err());
+    }
 
     #[test]
     fn revisions_preserve_known_sha256_values() {
@@ -607,7 +744,8 @@ mod tests {
         fs::create_dir_all(tag_path.parent().unwrap()).unwrap();
         atomic_write(&tag_path, "タグ本文").unwrap();
         let notes = scan_notes(directory.path()).unwrap();
-        assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].id, "ordinary.txt");
+        assert_eq!(notes.notes.len(), 1);
+        assert_eq!(notes.notes[0].id, "ordinary.txt");
+        assert_eq!(notes.issues.len(), 0);
     }
 }
