@@ -414,9 +414,13 @@ export function App() {
             onChange={(event) => {
               setSearch(event.target.value);
             }}
+            aria-describedby="search-scope"
             placeholder="メモを検索"
           />
         </div>
+        <p className="search-hint" id="search-scope">
+          タイトル・本文の抜粋・リンク名を検索（全文検索は非対応）
+        </p>
         <button className="new-note-button" onClick={createNote}>
           <span>＋</span> 新しいメモ
         </button>
@@ -434,7 +438,11 @@ export function App() {
               <time>{new Date(note.modifiedAt).toLocaleDateString("ja-JP", { day: "numeric", month: "short" })}</time>
             </button>
           ))}
-          {visibleNotes.length === 0 && <p className="empty-list">メモがありません</p>}
+          {visibleNotes.length === 0 && (
+            <p className="empty-list">
+              {search.trim() ? "検索条件に一致するメモがありません" : "メモがありません"}
+            </p>
+          )}
         </div>
         <footer className="vault-path" title={vault}>
           ◉ {vault.split("/").pop()}
