@@ -1,0 +1,15 @@
+   Compiling synaplink v0.1.0 (/Users/daichi/ghq/github.com/kudoas/synaplink/.worktrees/review-remaining-main/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.79s
+     Running unittests src/lib.rs (/private/tmp/synaplink-integration-target/debug/deps/synaplink_lib-8ba4f2c3f00e975a)
+
+running 1 test
+input_files=2 scan_result=Ok returned_notes=1 returned_id=valid.txt
+test remaining_main_audit::invalid_utf8_is_still_omitted_from_successful_scan ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/private/tmp/synaplink-integration-target/debug/deps/synaplink-bab5c56ce16a98bb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
