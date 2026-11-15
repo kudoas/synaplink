@@ -112,7 +112,7 @@ button { color: inherit; }
 .error-message { color: var(--accent) !important; font-size: 12px; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(38,34,28,.32); backdrop-filter: blur(3px); }
-.modal { width: min(440px, calc(100% - 40px)); padding: 30px; border-radius: 13px; background: #fffdf9; box-shadow: 0 25px 80px rgba(0,0,0,.2); }
+.modal { width: min(440px, calc(100% - 40px)); max-height: calc(100% - 40px); margin: auto; padding: 30px; overflow-y: auto; border: 0; border-radius: 13px; color: var(--ink); background: #fffdf9; box-shadow: 0 25px 80px rgba(0,0,0,.2); }
 .modal h2 { margin: 9px 0; font: 600 22px var(--font-display); }
 .modal p { color: var(--muted); font-size: 13px; line-height: 1.7; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 24px; }

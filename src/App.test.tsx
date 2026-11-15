@@ -718,7 +718,7 @@ describe(App, () => {
 
     expect(conflictDialog).toBeInTheDocument();
     expect(api.chooseVault).not.toHaveBeenCalled();
-    expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
+    expect(screen.getByRole("textbox", { hidden: true, name: "タイトル" })).toHaveValue(baseNote.title);
   });
 
   it("保存エラー時は保存先選択を開かない", async () => {
@@ -768,9 +768,11 @@ describe(App, () => {
     await waitFor(() => {
       expect(api.saveNote).toHaveBeenCalledTimes(2);
     });
+    // The API call count observes save start; wait for the failed-save recovery UI before acting.
+    const discardButton = await screen.findByRole("button", { name: "編集を破棄して閉じる" });
     expect({ reads: vi.mocked(api.readNote).mock.calls, sourceVisible: screen.queryByRole("button", { name: /りんごのメモ/u }) }).toStrictEqual({ reads: [[baseNote.id]], sourceVisible: null });
 
-    fireEvent.click(screen.getByRole("button", { name: "編集を破棄して閉じる" }));
+    fireEvent.click(discardButton);
 
     expect({
       alert: screen.queryByRole("alert"),
@@ -995,7 +997,7 @@ describe(App, () => {
 
     expect(conflictDialog).toBeInTheDocument();
     expect(api.deleteNote).not.toHaveBeenCalled();
-    expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
+    expect(screen.getByRole("textbox", { hidden: true, name: "タイトル" })).toHaveValue(baseNote.title);
   });
 
   it("削除前の保存が失敗したらメモをゴミ箱へ移動しない", async () => {

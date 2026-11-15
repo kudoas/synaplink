@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useImperativeHandle, useRef, type Ref } from "react";
 
 import { MemoEditor, type MemoEditorHandle } from "./MemoEditor";
 
@@ -9,11 +9,23 @@ interface Props {
   onOpenUrlError: (error: unknown) => void;
   onTitleChange: (title: string) => void;
   title: string;
+  ref?: Ref<DocumentEditorHandle>;
 }
 
-export function DocumentEditor({ body, onBodyChange, onOpenLink, onOpenUrlError, onTitleChange, title }: Props) {
+export interface DocumentEditorHandle {
+  focusTitle: () => void;
+}
+
+export function DocumentEditor({ body, onBodyChange, onOpenLink, onOpenUrlError, onTitleChange, title, ref }: Props) {
   const memoEditor = useRef<MemoEditorHandle>(null);
   const titleInput = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focusTitle() {
+      titleInput.current?.focus();
+      titleInput.current?.select();
+    },
+  }));
 
   return (
     <div className="document-body">

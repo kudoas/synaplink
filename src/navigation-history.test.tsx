@@ -245,7 +245,7 @@ describe("note navigation history", () => {
     fireEvent.click(backButton());
     await screen.findByRole("dialog");
     expect(api.readNote).not.toHaveBeenCalled();
-    expect(backButton()).toBeDisabled();
+    expect(screen.getByRole("button", { hidden: true, name: "戻る" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "外部の内容を読む" }));
     fireEvent.click(backButton());
     await waitForTitle("メモA");

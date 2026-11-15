@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { DocumentEditor } from "./components/DocumentEditor";
+import { DocumentEditor, type DocumentEditorHandle } from "./components/DocumentEditor";
 import { EditConflictDialog } from "./components/EditConflictDialog";
 import { SaveStatus } from "./components/SaveStatus";
 import { filterNotes, findLatestNote } from "./note-search";
@@ -22,6 +22,8 @@ export function App() {
   const externalReadGeneration = useRef(0);
   const editorNavigationGeneration = useRef(0);
   const notesRef = useRef<NoteSummary[]>([]);
+  const documentEditor = useRef<DocumentEditorHandle>(null);
+  const pendingTitleFocus = useRef<string | null>(null);
   const notesScope = useRef({ isChangingVault: false });
   const notesRequestGeneration = useRef(0);
   const appliedNotesRequestGeneration = useRef(0);
@@ -115,6 +117,7 @@ export function App() {
   const loadDocument = useCallback(
     (note: NoteDocument | null) => {
       invalidateExternalRead();
+      pendingTitleFocus.current = null;
       if (!note) {
         resetHistory();
       }
@@ -182,6 +185,13 @@ export function App() {
   }, [draft, notes, saveState, synchronize]);
 
   const visibleNotes = useMemo(() => filterNotes(notes, search), [notes, search]);
+
+  useEffect(() => {
+    if (!isNavigating && draft?.id === pendingTitleFocus.current && documentEditor.current) {
+      pendingTitleFocus.current = null;
+      documentEditor.current.focusTitle();
+    }
+  }, [draft?.id, isNavigating]);
 
   const requestEditorNavigation = useCallback(
     (action: (isCurrent: () => boolean) => NavigationResult | Promise<NavigationResult>) => {
@@ -276,6 +286,7 @@ export function App() {
         return;
       }
       loadDocument(note);
+      pendingTitleFocus.current = note.id;
       visit(note.id, search, search);
     });
   };
@@ -493,6 +504,7 @@ export function App() {
               onTitleChange={(title) => {
                 edit((current) => ({ ...current, title }));
               }}
+              ref={documentEditor}
               title={draft.title}
               onOpenUrlError={(openError) => { setError(`URLを開けませんでした: ${String(openError)}`); }}
             />
