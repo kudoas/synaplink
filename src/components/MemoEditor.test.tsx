@@ -106,7 +106,7 @@ describe(MemoEditor, () => {
     expect(document.activeElement).toBe(container.querySelector(".cm-content"));
   });
 
-  it("本文の論理的な1行目で上矢印を押すと前の入力欄への移動を通知する", () => {
+  it("本文の表示上の1行目で上矢印を押すと前の入力欄への移動を通知する", () => {
     const onNavigateBackward = vi.fn();
     const { container } = render(
       <MemoEditor value={"一行目\n二行目"} onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} />,
@@ -119,6 +119,20 @@ describe(MemoEditor, () => {
     fireEvent.keyDown(view!.contentDOM, { key: "ArrowUp" });
 
     expect(onNavigateBackward).toHaveBeenCalledWith();
+  });
+
+  it("論理的な1行目でも折り返し後の表示行では本文内の上移動を保つ", () => {
+    const onNavigateBackward = vi.fn();
+    const { container } = render(
+      <MemoEditor value="折り返して表示される長い本文" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} />,
+    );
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+    view.dispatch({ selection: { anchor: 10 } });
+    vi.spyOn(view, "moveToLineBoundary").mockReturnValue(EditorSelection.cursor(6));
+
+    fireEvent.keyDown(view.contentDOM, { key: "ArrowUp" });
+
+    expect(onNavigateBackward).not.toHaveBeenCalled();
   });
 
   it("本文の2行目では前の入力欄への移動を通知しない", () => {
