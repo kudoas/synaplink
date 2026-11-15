@@ -14,6 +14,9 @@ use uuid::Uuid;
 mod safe_save;
 mod shutdown;
 
+#[cfg(all(test, target_os = "macos"))]
+mod native_io_tests;
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Settings {
