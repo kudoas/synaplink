@@ -1,0 +1,19 @@
+{
+  "checked_implementation": "cc5f73dc595098afaa0d912cd3df3ba9e46a29e2",
+  "uid": 501,
+  "uname": {
+    "system": "Darwin",
+    "release": "27.2.0",
+    "version": "Darwin Kernel Version 27.2.0: Wed Oct 14 23:47:07 PDT 2026; root:xnu-13432.41.4~25/RELEASE_ARM64_T8132",
+    "machine": "arm64",
+    "processor": "arm"
+  },
+  "macos": [
+    "ProductName:\t\tmacOS",
+    "ProductVersion:\t\t27.2",
+    "BuildVersion:\t\t26B123"
+  ],
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "node": "v26.13.1",
+  "pnpm": "12.20.0"
+}
