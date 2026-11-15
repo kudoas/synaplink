@@ -494,6 +494,7 @@ export function App() {
                 edit((current) => ({ ...current, title }));
               }}
               title={draft.title}
+              onOpenUrlError={(openError) => { setError(`URLを開けませんでした: ${String(openError)}`); }}
             />
           )}
         </main>

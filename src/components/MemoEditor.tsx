@@ -11,6 +11,7 @@ interface Props {
   onChange: (value: string) => void;
   onNavigateBackward: () => void;
   onOpenLink: (link: string) => void;
+  onOpenUrlError: (error: unknown) => void;
   ref?: Ref<MemoEditorHandle>;
 }
 
@@ -54,7 +55,7 @@ const interactivePlugin = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
-export function MemoEditor({ value, onChange, onNavigateBackward, onOpenLink, ref }: Props) {
+export function MemoEditor({ value, onChange, onNavigateBackward, onOpenLink, onOpenUrlError, ref }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const createStateRef = useRef<((doc: string) => EditorState) | null>(null);
@@ -62,12 +63,14 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenLink, re
   const changeHandler = useRef(onChange);
   const navigateBackwardHandler = useRef(onNavigateBackward);
   const linkHandler = useRef(onOpenLink);
+  const openUrlErrorHandler = useRef(onOpenUrlError);
 
   useEffect(() => {
     changeHandler.current = onChange;
     navigateBackwardHandler.current = onNavigateBackward;
     linkHandler.current = onOpenLink;
-  }, [onChange, onNavigateBackward, onOpenLink]);
+    openUrlErrorHandler.current = onOpenUrlError;
+  }, [onChange, onNavigateBackward, onOpenLink, onOpenUrlError]);
 
   useImperativeHandle(ref, () => ({
     focusAtStart() {
@@ -134,7 +137,7 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenLink, re
               return true;
             }
             event.preventDefault();
-            void openUrl(url).catch(() => null);
+            void openUrl(url).catch((error: unknown) => { openUrlErrorHandler.current(error); });
             return true;
           },
           mousedown(event) {

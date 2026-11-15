@@ -6,11 +6,12 @@ interface Props {
   body: string;
   onBodyChange: (body: string) => void;
   onOpenLink: (link: string) => void;
+  onOpenUrlError: (error: unknown) => void;
   onTitleChange: (title: string) => void;
   title: string;
 }
 
-export function DocumentEditor({ body, onBodyChange, onOpenLink, onTitleChange, title }: Props) {
+export function DocumentEditor({ body, onBodyChange, onOpenLink, onOpenUrlError, onTitleChange, title }: Props) {
   const memoEditor = useRef<MemoEditorHandle>(null);
   const titleInput = useRef<HTMLInputElement>(null);
 
@@ -50,6 +51,7 @@ export function DocumentEditor({ body, onBodyChange, onOpenLink, onTitleChange, 
           input.setSelectionRange(input.value.length, input.value.length);
         }}
         onOpenLink={onOpenLink}
+        onOpenUrlError={onOpenUrlError}
       />
     </div>
   );

@@ -14,10 +14,10 @@ describe(MemoEditor, () => {
   it("外部から本文を同期しても変更を通知しない", () => {
     const onChange = vi.fn();
     const { container, rerender } = render(
-      <MemoEditor value="最初の本文" onChange={onChange} onNavigateBackward={vi.fn()} onOpenLink={vi.fn()} />,
+      <MemoEditor value="最初の本文" onChange={onChange} onNavigateBackward={vi.fn()} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />,
     );
 
-    rerender(<MemoEditor value="別のメモの本文" onChange={onChange} onNavigateBackward={vi.fn()} onOpenLink={vi.fn()} />);
+    rerender(<MemoEditor value="別のメモの本文" onChange={onChange} onNavigateBackward={vi.fn()} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />);
 
     expect(container.querySelector(".cm-content")).toHaveTextContent("別のメモの本文");
     expect(onChange).not.toHaveBeenCalled();
@@ -25,7 +25,7 @@ describe(MemoEditor, () => {
 
   it("エディター上の編集を1回通知する", () => {
     const onChange = vi.fn();
-    const { container } = render(<MemoEditor value="本文" onChange={onChange} onNavigateBackward={vi.fn()} onOpenLink={vi.fn()} />);
+    const { container } = render(<MemoEditor value="本文" onChange={onChange} onNavigateBackward={vi.fn()} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />);
     const editorElement = container.querySelector<HTMLElement>(".cm-editor");
     expect(editorElement).not.toBeNull();
     const view = EditorView.findFromDOM(editorElement!);
@@ -42,12 +42,12 @@ describe(MemoEditor, () => {
   it("外部本文へ置き換えた後のUndoとRedoでは過去の本文を復元しない", () => {
     const onChange = vi.fn();
     const handlers = { handleNavigateBackward: vi.fn(), handleOpenLink: vi.fn() };
-    const { container, rerender } = render(<MemoEditor value="元の本文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+    const { container, rerender } = render(<MemoEditor value="元の本文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} onOpenUrlError={vi.fn()} />);
     const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
     view.dispatch({ changes: { from: view.state.doc.length, insert: "を編集" }, userEvent: "input.type" });
     onChange.mockClear();
 
-    rerender(<MemoEditor value="外部で変更した本文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+    rerender(<MemoEditor value="外部で変更した本文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} onOpenUrlError={vi.fn()} />);
 
     const didUndo = undo(view);
     const didRedo = redo(view);
@@ -60,10 +60,10 @@ describe(MemoEditor, () => {
   it("同じ本文の保存応答では通常のUndoとRedoを保持する", () => {
     const onChange = vi.fn();
     const handlers = { handleNavigateBackward: vi.fn(), handleOpenLink: vi.fn() };
-    const { container, rerender } = render(<MemoEditor value="本文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+    const { container, rerender } = render(<MemoEditor value="本文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} onOpenUrlError={vi.fn()} />);
     const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
     view.dispatch({ changes: { from: view.state.doc.length, insert: "を編集" }, userEvent: "input.type" });
-    rerender(<MemoEditor value="本文を編集" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+    rerender(<MemoEditor value="本文を編集" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} onOpenUrlError={vi.fn()} />);
 
     const didUndo = undo(view);
     const afterUndo = view.state.doc.toString();
@@ -77,10 +77,10 @@ describe(MemoEditor, () => {
   it("外部本文の取込後も選択範囲を本文の長さに収め、新しいユーザー編集だけUndoできる", () => {
     const onChange = vi.fn();
     const handlers = { handleNavigateBackward: vi.fn(), handleOpenLink: vi.fn() };
-    const { container, rerender } = render(<MemoEditor value="長い本文を編集しています" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+    const { container, rerender } = render(<MemoEditor value="長い本文を編集しています" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} onOpenUrlError={vi.fn()} />);
     const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
     view.dispatch({ selection: EditorSelection.create([EditorSelection.cursor(1), EditorSelection.cursor(view.state.doc.length)], 1) });
-    rerender(<MemoEditor value="短文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} />);
+    rerender(<MemoEditor value="短文" onChange={onChange} onNavigateBackward={handlers.handleNavigateBackward} onOpenLink={handlers.handleOpenLink} onOpenUrlError={vi.fn()} />);
 
     expect(view.state.selection.ranges.map((range) => range.head)).toStrictEqual([1, 2]);
     view.dispatch({ changes: { from: 2, insert: "を編集" }, userEvent: "input.type" });
@@ -94,7 +94,7 @@ describe(MemoEditor, () => {
   it("本文先頭へフォーカスを移動する", () => {
     const ref = createRef<MemoEditorHandle>();
     const { container } = render(
-      <MemoEditor ref={ref} value="本文" onChange={vi.fn()} onNavigateBackward={vi.fn()} onOpenLink={vi.fn()} />,
+      <MemoEditor ref={ref} value="本文" onChange={vi.fn()} onNavigateBackward={vi.fn()} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />,
     );
     const editorElement = container.querySelector<HTMLElement>(".cm-editor");
     const view = EditorView.findFromDOM(editorElement!);
@@ -109,7 +109,7 @@ describe(MemoEditor, () => {
   it("本文の表示上の1行目で上矢印を押すと前の入力欄への移動を通知する", () => {
     const onNavigateBackward = vi.fn();
     const { container } = render(
-      <MemoEditor value={"一行目\n二行目"} onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} />,
+      <MemoEditor value={"一行目\n二行目"} onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />,
     );
     const editorElement = container.querySelector<HTMLElement>(".cm-editor");
     const view = EditorView.findFromDOM(editorElement!);
@@ -124,7 +124,7 @@ describe(MemoEditor, () => {
   it("論理的な1行目でも折り返し後の表示行では本文内の上移動を保つ", () => {
     const onNavigateBackward = vi.fn();
     const { container } = render(
-      <MemoEditor value="折り返して表示される長い本文" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} />,
+      <MemoEditor value="折り返して表示される長い本文" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />,
     );
     const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
     view.dispatch({ selection: { anchor: 10 } });
@@ -138,7 +138,7 @@ describe(MemoEditor, () => {
   it("本文の2行目では前の入力欄への移動を通知しない", () => {
     const onNavigateBackward = vi.fn();
     const { container } = render(
-      <MemoEditor value={"一行目\n二行目"} onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} />,
+      <MemoEditor value={"一行目\n二行目"} onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />,
     );
     const editorElement = container.querySelector<HTMLElement>(".cm-editor");
     const view = EditorView.findFromDOM(editorElement!);
@@ -152,7 +152,7 @@ describe(MemoEditor, () => {
   it("本文の1行目を選択中は前の入力欄への移動を通知しない", () => {
     const onNavigateBackward = vi.fn();
     const { container } = render(
-      <MemoEditor value="一行目" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} />,
+      <MemoEditor value="一行目" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />,
     );
     const editorElement = container.querySelector<HTMLElement>(".cm-editor");
     const view = EditorView.findFromDOM(editorElement!);
@@ -166,7 +166,7 @@ describe(MemoEditor, () => {
   it("本文でime変換中は前の入力欄への移動を通知しない", () => {
     const onNavigateBackward = vi.fn();
     const { container } = render(
-      <MemoEditor value="一行目" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} />,
+      <MemoEditor value="一行目" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />,
     );
     const editorElement = container.querySelector<HTMLElement>(".cm-editor");
     const view = EditorView.findFromDOM(editorElement!);
@@ -180,7 +180,7 @@ describe(MemoEditor, () => {
   it("空の本文から前の入力欄への移動を通知する", () => {
     const onNavigateBackward = vi.fn();
     const { container } = render(
-      <MemoEditor value="" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} />,
+      <MemoEditor value="" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />,
     );
     const editorElement = container.querySelector<HTMLElement>(".cm-editor");
     const view = EditorView.findFromDOM(editorElement!);
@@ -193,7 +193,7 @@ describe(MemoEditor, () => {
   it("本文で複数キャレットがある場合は前の入力欄への移動を通知しない", () => {
     const onNavigateBackward = vi.fn();
     const { container } = render(
-      <MemoEditor value="一行目" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} />,
+      <MemoEditor value="一行目" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />,
     );
     const editorElement = container.querySelector<HTMLElement>(".cm-editor");
     const view = EditorView.findFromDOM(editorElement!);
@@ -208,7 +208,7 @@ describe(MemoEditor, () => {
   it("本文で修飾キー付きの上矢印を押しても前の入力欄への移動を通知しない", () => {
     const onNavigateBackward = vi.fn();
     const { container } = render(
-      <MemoEditor value="一行目" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} />,
+      <MemoEditor value="一行目" onChange={vi.fn()} onNavigateBackward={onNavigateBackward} onOpenLink={vi.fn()} onOpenUrlError={vi.fn()} />,
     );
     const editorElement = container.querySelector<HTMLElement>(".cm-editor");
     const view = EditorView.findFromDOM(editorElement!);
@@ -221,7 +221,7 @@ describe(MemoEditor, () => {
   it("本文のWikiリンクを左クリックすると検索を通知する", () => {
     const onOpenLink = vi.fn();
     const { container } = render(
-      <MemoEditor value="本文の [[りんご]]" onChange={vi.fn()} onNavigateBackward={vi.fn()} onOpenLink={onOpenLink} />,
+      <MemoEditor value="本文の [[りんご]]" onChange={vi.fn()} onNavigateBackward={vi.fn()} onOpenLink={onOpenLink} onOpenUrlError={vi.fn()} />,
     );
     const link = container.querySelector<HTMLElement>(".cm-wikilink");
     expect(link).not.toBeNull();
@@ -234,7 +234,7 @@ describe(MemoEditor, () => {
   it("wikiリンクは左クリック以外では検索を通知せず、旧タグは装飾しない", () => {
     const onOpenLink = vi.fn();
     const { container } = render(
-      <MemoEditor value="[[りんご]] #みかん" onChange={vi.fn()} onNavigateBackward={vi.fn()} onOpenLink={onOpenLink} />,
+      <MemoEditor value="[[りんご]] #みかん" onChange={vi.fn()} onNavigateBackward={vi.fn()} onOpenLink={onOpenLink} onOpenUrlError={vi.fn()} />,
     );
     const link = container.querySelector<HTMLElement>(".cm-wikilink");
 
@@ -250,7 +250,7 @@ describe(MemoEditor, () => {
         value="http://example.com と https://example.com/path。"
         onChange={vi.fn()}
         onNavigateBackward={vi.fn()}
-        onOpenLink={vi.fn()}
+        onOpenLink={vi.fn()} onOpenUrlError={vi.fn()}
       />,
     );
 
@@ -265,7 +265,7 @@ describe(MemoEditor, () => {
         value="www.example.com ftp://example.com mailto:memo@example.com"
         onChange={vi.fn()}
         onNavigateBackward={vi.fn()}
-        onOpenLink={vi.fn()}
+        onOpenLink={vi.fn()} onOpenUrlError={vi.fn()}
       />,
     );
 
@@ -281,7 +281,7 @@ describe(MemoEditor, () => {
         value="https://example.com/path#section"
         onChange={onChange}
         onNavigateBackward={vi.fn()}
-        onOpenLink={onOpenLink}
+        onOpenLink={onOpenLink} onOpenUrlError={vi.fn()}
       />,
     );
     const link = container.querySelector<HTMLElement>(".cm-zettel-link");
@@ -303,7 +303,7 @@ describe(MemoEditor, () => {
         value="https://example.com"
         onChange={vi.fn()}
         onNavigateBackward={vi.fn()}
-        onOpenLink={vi.fn()}
+        onOpenLink={vi.fn()} onOpenUrlError={vi.fn()}
       />,
     );
     const link = container.querySelector<HTMLElement>(".cm-zettel-link");
@@ -315,22 +315,23 @@ describe(MemoEditor, () => {
     expect(openUrl).not.toHaveBeenCalled();
   });
 
-  it("urlを開けなくても未処理の拒否を残さない", async () => {
-    vi.mocked(openUrl).mockReset().mockRejectedValue(new Error("open failed"));
-    const { container } = render(
-      <MemoEditor
-        value="https://example.com"
-        onChange={vi.fn()}
-        onNavigateBackward={vi.fn()}
-        onOpenLink={vi.fn()}
-      />,
+  it("urlを開けない理由を最新のコールバックへ通知し本文を保つ", async () => {
+    const failure = new Error("open failed");
+    vi.mocked(openUrl).mockReset().mockRejectedValue(failure);
+    const previousHandler = vi.fn();
+    const currentHandler = vi.fn();
+    const onChange = vi.fn();
+    const { container, rerender } = render(
+      <MemoEditor value="https://example.com" onChange={onChange} onNavigateBackward={vi.fn()} onOpenLink={vi.fn()} onOpenUrlError={previousHandler} />,
     );
-    const link = container.querySelector<HTMLElement>(".cm-zettel-link");
-    expect(link).not.toBeNull();
+    rerender(<MemoEditor value="https://example.com" onChange={onChange} onNavigateBackward={vi.fn()} onOpenLink={vi.fn()} onOpenUrlError={currentHandler} />);
 
-    fireEvent.click(link!, { button: 0 });
+    fireEvent.click(container.querySelector<HTMLElement>(".cm-zettel-link")!, { button: 0 });
     await Promise.resolve();
 
-    expect(container.querySelector(".cm-zettel-link")).toBeInTheDocument();
+    expect(currentHandler).toHaveBeenCalledExactlyOnceWith(failure);
+    expect(previousHandler).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(container.querySelector(".cm-content")).toHaveTextContent("https://example.com");
   });
 });
