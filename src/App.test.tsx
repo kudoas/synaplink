@@ -154,6 +154,36 @@ async function editBody(container: HTMLElement, body: string) {
   });
 }
 
+
+describe("検索範囲と空の一覧", () => {
+  it("検索範囲を入力欄の説明として伝え、未一致と空の保存先を区別する", async () => {
+    resetTest();
+    mockVault();
+    render(<App />);
+    await screen.findByRole("button", { name: /リンク元/u });
+    const searchInput = screen.getByPlaceholderText("メモを検索");
+    expect(searchInput).toHaveAccessibleDescription("タイトル・本文の抜粋・リンク名を検索（全文検索は非対応）");
+    fireEvent.change(searchInput, { target: { value: "一致しない検索語" } });
+    expect(screen.getByText("検索条件に一致するメモがありません")).toBeInTheDocument();
+    expect(screen.queryByText("メモがありません")).not.toBeInTheDocument();
+    fireEvent.change(searchInput, { target: { value: "" } });
+    expect(screen.getByRole("button", { name: /リンク元/u })).toBeInTheDocument();
+    expect(screen.queryByText("検索条件に一致するメモがありません")).not.toBeInTheDocument();
+    resetTest();
+  });
+
+  it("メモがない保存先では空の一覧と表示する", async () => {
+    resetTest();
+    mockVault([]);
+    render(<App />);
+    const emptyMessage = await screen.findByText("メモがありません");
+    expect(emptyMessage).toBeInTheDocument();
+    expect(screen.queryByText("検索条件に一致するメモがありません")).not.toBeInTheDocument();
+    resetTest();
+  });
+});
+
+
 describe(App, () => {
   it("保存先変更後に完了した旧保存先の一覧を反映しない", async () => {
     resetTest();
@@ -984,34 +1014,5 @@ describe(App, () => {
     expect(saveError).toBeInTheDocument();
     expect(api.deleteNote).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
-  });
-});
-
-
-describe("検索範囲と空の一覧", () => {
-  it("検索範囲を入力欄の説明として伝え、未一致と空の保存先を区別する", async () => {
-    resetTest();
-    mockVault();
-    render(<App />);
-    await screen.findByRole("button", { name: /リンク元/u });
-    const searchInput = screen.getByPlaceholderText("メモを検索");
-    expect(searchInput).toHaveAccessibleDescription("タイトル・本文の抜粋・リンク名を検索（全文検索は非対応）");
-    fireEvent.change(searchInput, { target: { value: "一致しない検索語" } });
-    expect(screen.getByText("検索条件に一致するメモがありません")).toBeInTheDocument();
-    expect(screen.queryByText("メモがありません")).not.toBeInTheDocument();
-    fireEvent.change(searchInput, { target: { value: "" } });
-    expect(screen.getByRole("button", { name: /リンク元/u })).toBeInTheDocument();
-    expect(screen.queryByText("検索条件に一致するメモがありません")).not.toBeInTheDocument();
-    resetTest();
-  });
-
-  it("メモがない保存先では空の一覧と表示する", async () => {
-    resetTest();
-    mockVault([]);
-    render(<App />);
-    const emptyMessage = await screen.findByText("メモがありません");
-    expect(emptyMessage).toBeInTheDocument();
-    expect(screen.queryByText("検索条件に一致するメモがありません")).not.toBeInTheDocument();
-    resetTest();
   });
 });
