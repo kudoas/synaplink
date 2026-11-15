@@ -1,0 +1,26 @@
+<!doctype html><html lang="ja"><head><meta charset="UTF-8"><title>残課題再確認専用モック</title></head><body><div id="root"></div>
+<script>
+const makeNote = (id,title,body,modifiedAt) => ({id,title,body,modifiedAt,revision:`r-${id}`,links:[]});
+window.__auditNotes = [makeNote('a.txt','調査用メモ','先頭の説明。\nここにだけ深部検索語があります。\nhttps://example.com',2000),makeNote('b.txt','別のメモ','別の本文',1000)];
+window.__auditCalls=[];
+window.isTauri=true;
+window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener(){}};
+let callbackId=0;
+window.__TAURI_INTERNALS__={transformCallback(){return ++callbackId},unregisterCallback(){},invoke:async(cmd,args)=>{
+window.__auditCalls.push({cmd,args});
+if(cmd==='plugin:event|listen')return callbackId;
+if(cmd==='plugin:event|unlisten')return;
+if(cmd==='register_shutdown_guard')return null;
+if(cmd==='get_vault')return '/tmp/synaplink-remaining-audit';
+if(cmd==='list_notes')return window.__auditNotes.map(n=>({...n,preview:n.body.split('\n')[0].slice(0,90)}));
+if(cmd==='read_note')return structuredClone(window.__auditNotes.find(n=>n.id===args.id));
+if(cmd==='create_note'){const n=makeNote('new.txt','無題','',3000);window.__auditNotes.unshift(n);return n;}
+if(cmd==='save_note'){
+const note=window.__auditNotes.find(n=>n.id===args.input.id);
+if(window.__auditConflict)return {status:'conflict',current:{...note,body:'外部の編集',revision:'external'}};
+Object.assign(note,args.input,{revision:note.revision+'x'});return {status:'saved',note:structuredClone(note)};
+}
+if(cmd==='plugin:opener|open_url')throw Error('audit opener failure');
+throw Error('unimplemented audit command '+cmd);
+}};
+</script><script type="module" src="/src/main.tsx"></script></body></html>

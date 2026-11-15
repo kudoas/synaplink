@@ -1,0 +1,56 @@
+{
+  "afterArrowUp": {
+    "label": "タイトル",
+    "tag": "INPUT"
+  },
+  "conflict": {
+    "activeClass": "cm-content cm-lineWrapping",
+    "activeInsideDialog": false
+  },
+  "newNote": {
+    "activeClass": "new-note-button",
+    "title": "無題"
+  },
+  "opener": {
+    "calls": 1,
+    "errorToasts": 0
+  },
+  "search": {
+    "hint": null,
+    "message": "メモがありません",
+    "placeholder": "メモを検索",
+    "rows": 0
+  },
+  "tabSequence": [
+    {
+      "insideDialog": true,
+      "tag": "BUTTON",
+      "text": "外部の内容を読む"
+    },
+    {
+      "insideDialog": true,
+      "tag": "BUTTON",
+      "text": "現在の編集で上書き"
+    },
+    {
+      "insideDialog": false,
+      "tag": "BODY",
+      "text": null
+    },
+    {
+      "insideDialog": false,
+      "tag": "BUTTON",
+      "text": "⋯"
+    }
+  ],
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "viewport": {
+    "height": 633,
+    "width": 1280
+  },
+  "wrappedLine": {
+    "activeTag": "DIV",
+    "caretOffsetFromTop": 465.75,
+    "height": 489.546875
+  }
+}
