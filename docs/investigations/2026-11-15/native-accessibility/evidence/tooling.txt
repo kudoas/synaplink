@@ -1,0 +1,31 @@
+Observed 2026-11-15; application source main cc5f73d, documentation base main279d29d.
+$ swift --version
+swift-driver version: 1.168.6 Apple Swift version 6.4.2 (swiftlang-6.4.2.1.9 clang-2100.4.1.1)
+Target: arm64-apple-macosx27.2.0
+
+$ xcodebuild -version
+xcode-select: error: tool 'xcodebuild' requires Xcode, but active developer directory '/Library/Developer/CommandLineTools' is a command line tools instance
+
+$ xcrun --find simctl
+xcrun: error: unable to find utility "simctl", not a developer tool or in PATH
+
+$ command -v appium
+(no stdout; executable not found in this shell PATH)
+
+$ /usr/bin/safaridriver --version
+Included with Safari 27.2 (22625.2.8.11.9)
+
+Installed agent-browser/package.json:
+"version": "0.42.0"
+
+agent-browser --help (excerpt):
+  --engine <name>            Browser engine: chrome (default), lightpanda, obscura (experimental)
+  -p, --provider <name>      Browser provider: ios, browserbase, kernel, browseruse, browserless, agentcore, or plugin name
+
+iOS Simulator (requires Xcode and Appium):
+  agent-browser -p ios open example.com
+
+README (excerpt):
+Chrome for Testing is the default browser. You can also attach to a running Chrome with --cdp or --auto-connect, select the Lightpanda or Obscura engine with --engine, drive Mobile Safari in the iOS Simulator, or use a cloud browser provider.
+
+No browser, simulator or WKWebView was launched by this environment probe. No OS settings were changed.
