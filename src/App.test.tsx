@@ -768,9 +768,11 @@ describe(App, () => {
     await waitFor(() => {
       expect(api.saveNote).toHaveBeenCalledTimes(2);
     });
+    // The API call count observes save start; wait for the failed-save recovery UI before acting.
+    const discardButton = await screen.findByRole("button", { name: "編集を破棄して閉じる" });
     expect({ reads: vi.mocked(api.readNote).mock.calls, sourceVisible: screen.queryByRole("button", { name: /りんごのメモ/u }) }).toStrictEqual({ reads: [[baseNote.id]], sourceVisible: null });
 
-    fireEvent.click(screen.getByRole("button", { name: "編集を破棄して閉じる" }));
+    fireEvent.click(discardButton);
 
     expect({
       alert: screen.queryByRole("alert"),
