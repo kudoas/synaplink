@@ -718,7 +718,7 @@ describe(App, () => {
 
     expect(conflictDialog).toBeInTheDocument();
     expect(api.chooseVault).not.toHaveBeenCalled();
-    expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
+    expect(screen.getByRole("textbox", { hidden: true, name: "タイトル" })).toHaveValue(baseNote.title);
   });
 
   it("保存エラー時は保存先選択を開かない", async () => {
@@ -995,7 +995,7 @@ describe(App, () => {
 
     expect(conflictDialog).toBeInTheDocument();
     expect(api.deleteNote).not.toHaveBeenCalled();
-    expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
+    expect(screen.getByRole("textbox", { hidden: true, name: "タイトル" })).toHaveValue(baseNote.title);
   });
 
   it("削除前の保存が失敗したらメモをゴミ箱へ移動しない", async () => {
