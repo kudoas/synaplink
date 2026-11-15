@@ -1,3 +1,4 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { EditorView } from "@codemirror/view";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -18,6 +19,8 @@ vi.mock(import("./api"), () => ({
     setVault: vi.fn(),
   },
 }));
+
+vi.mock(import("@tauri-apps/plugin-opener"), () => ({ openUrl: vi.fn() }));
 
 const source: NoteDocument = {
   body: "本文の [[りんご]]",
@@ -1014,5 +1017,25 @@ describe(App, () => {
     expect(saveError).toBeInTheDocument();
     expect(api.deleteNote).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox", { name: "タイトル" })).toHaveValue(baseNote.title);
+  });
+});
+
+describe("urlを開くときの失敗", () => {
+  it("既定ブラウザで開けない理由をエラー表示し本文を保持する", async () => {
+    resetTest();
+    const note = { ...source, body: "https://example.com" };
+    mockVault([note]);
+    vi.mocked(openUrl).mockRejectedValue(new Error("permission denied"));
+    const { container } = render(<App />);
+    const row = await screen.findByRole("button", { name: /リンク元/u });
+    fireEvent.click(row);
+    await waitFor(() => { expect(container.querySelector(".cm-zettel-link")).toBeInTheDocument(); });
+
+    fireEvent.click(container.querySelector<HTMLElement>(".cm-zettel-link")!, { button: 0 });
+
+    const error = await screen.findByText("URLを開けませんでした: Error: permission denied");
+    expect(error).toBeVisible();
+    expect(container.querySelector(".cm-content")).toHaveTextContent(note.body);
+    expect(api.saveNote).not.toHaveBeenCalled();
   });
 });
