@@ -3,5 +3,13 @@
   "extends": [
     "config:recommended"
   ],
-  "minimumReleaseAge": "3 days"
+  "minimumReleaseAge": "3 days",
+  "packageRules": [
+    {
+      "description": "Preserve the dependency versions used for the Rust audit reproduction",
+      "matchManagers": ["cargo"],
+      "matchFileNames": ["docs/investigations/2026-11-14/evidence/Cargo.toml"],
+      "enabled": false
+    }
+  ]
 }
