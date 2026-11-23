@@ -18,6 +18,7 @@ export function App() {
   const [notes, setNotes] = useState<NoteSummary[]>([]);
   const [scanIssues, setScanIssues] = useState<NoteScanIssue[]>([]);
   const [search, setSearch] = useState("");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const externalReadGeneration = useRef(0);
   const editorNavigationGeneration = useRef(0);
@@ -377,108 +378,122 @@ export function App() {
 
   if (!vault) {
     return (
-      <div className="welcome-shell">
-        <section className="welcome-card">
-          <div className="brand-mark">Z</div>
-          <span className="eyebrow">LOCAL-FIRST NOTES</span>
-          <h1>考えを、つなげる。</h1>
-          <p>プレーンテキストと [[リンク]] だけの、静かなツェッテルカステン。</p>
-          <button className="primary-button" onClick={chooseVault}>
+      <main className="welcome-view">
+        <section>
+          <h1>Synaplink</h1>
+          <p>メモを保存するフォルダーを選んでください。</p>
+          <button onClick={chooseVault}>
             メモの保存先を選ぶ
           </button>
           {error && <p className="error-message">{error}</p>}
         </section>
-      </div>
+      </main>
     );
   }
 
+  const sidebarToggleLabel = isSidebarCollapsed ? "サイドメニューを開く" : "サイドメニューを閉じる";
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={isSidebarCollapsed ? "app-shell sidebar-collapsed" : "app-shell"}>
+      <aside className="sidebar" aria-label="サイドメニュー">
         <header className="sidebar-header">
-          <div className="brand">
-            <span className="brand-mark small">Z</span>
-            <strong>Synaplink</strong>
-          </div>
-          <button className="icon-button" title="保存先を変更" onClick={chooseVault}>
-            ⋯
-          </button>
-        </header>
-        <nav className="history-navigation" aria-label="メモの移動履歴">
-          <button
-            aria-label="戻る"
-            disabled={!canGoBack || conflict !== null}
-            onClick={() => { moveInHistory(-1); }}
-            title="前のメモに戻る"
-          >
-            ← 戻る
-          </button>
-          <button
-            aria-label="進む"
-            disabled={!canGoForward || conflict !== null}
-            onClick={() => { moveInHistory(1); }}
-            title="次のメモに進む"
-          >
-            進む →
-          </button>
-        </nav>
-        <div className="search-box">
-          <span>⌕</span>
-          <input
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-            }}
-            aria-describedby="search-scope"
-            placeholder="メモを検索"
-          />
-        </div>
-        <p className="search-hint" id="search-scope">
-          タイトル・本文の抜粋・リンク名を検索（全文検索は非対応）
-        </p>
-        <button className="new-note-button" onClick={createNote}>
-          <span>＋</span> 新しいメモ
-        </button>
-        <div className="note-list">
-          {visibleNotes.map((note) => (
+          <div className="sidebar-brand">
             <button
-              className={`note-row ${draft?.id === note.id ? "active" : ""}`}
-              key={note.id}
-              onClick={() => {
-                openNote(note.id);
-              }}
+              type="button"
+              className="sidebar-toggle"
+              aria-controls="sidebar-content"
+              aria-expanded={!isSidebarCollapsed}
+              aria-label={sidebarToggleLabel}
+              title={sidebarToggleLabel}
+              onClick={() => { setIsSidebarCollapsed((collapsed) => !collapsed); }}
             >
-              <strong>{note.title.trim() || "無題"}</strong>
-              <p>{note.preview || "本文はまだありません。"}</p>
-              <time>{new Date(note.modifiedAt).toLocaleDateString("ja-JP", { day: "numeric", month: "short" })}</time>
+              <span aria-hidden="true">{isSidebarCollapsed ? "›" : "‹"}</span>
             </button>
-          ))}
-          {visibleNotes.length === 0 && (
-            <p className="empty-list">
-              {search.trim() ? "検索条件に一致するメモがありません" : "メモがありません"}
-            </p>
+            <strong hidden={isSidebarCollapsed}>Synaplink</strong>
+          </div>
+          <button hidden={isSidebarCollapsed} onClick={createNote}>新しいメモ</button>
+        </header>
+        <div className="sidebar-content" id="sidebar-content" hidden={isSidebarCollapsed}>
+          <nav className="history-navigation" aria-label="メモの移動履歴">
+            <button
+              aria-label="戻る"
+              disabled={!canGoBack || conflict !== null}
+              onClick={() => { moveInHistory(-1); }}
+              title="前のメモに戻る"
+            >
+              ← 戻る
+            </button>
+            <button
+              aria-label="進む"
+              disabled={!canGoForward || conflict !== null}
+              onClick={() => { moveInHistory(1); }}
+              title="次のメモに進む"
+            >
+              進む →
+            </button>
+          </nav>
+          <div className="search-box">
+            <input
+              type="search"
+              aria-label="メモを検索"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+              }}
+              aria-describedby="search-scope"
+              placeholder="メモを検索"
+            />
+          </div>
+          <p className="search-hint" id="search-scope">
+            タイトル・本文の抜粋・リンク名を検索（全文検索は非対応）
+          </p>
+          <div className="note-list">
+            {visibleNotes.map((note) => {
+              const modifiedAt = new Date(note.modifiedAt);
+              return (
+                <button
+                  className="note-row"
+                  aria-current={draft?.id === note.id}
+                  key={note.id}
+                  onClick={() => {
+                    openNote(note.id);
+                  }}
+                >
+                  <strong>{note.title.trim() || "無題"}</strong>
+                  <time dateTime={modifiedAt.toISOString()}>
+                    {modifiedAt.toLocaleDateString("ja-JP", { day: "numeric", month: "short" })}
+                  </time>
+                  {note.preview && <span className="note-preview">{note.preview}</span>}
+                </button>
+              );
+            })}
+            {visibleNotes.length === 0 && (
+              <p className="empty-list">
+                {search.trim() ? "検索条件に一致するメモがありません" : "メモがありません"}
+              </p>
+            )}
+          </div>
+          {scanIssues.length > 0 && (
+            <section className="note-scan-warning" role="status" aria-label="メモ一覧の読込警告">
+              <p>読み込めない項目があります（{scanIssues.length}件）。読み込めたメモは利用できます。</p>
+              <details>
+                <summary>対象と理由を表示</summary>
+                <pre>{scanIssues.map((issue) => `${issue.path}\n${issue.message}`).join("\n\n")}</pre>
+              </details>
+              <button type="button" onClick={() => { void refreshNotes(); }}>一覧を再読込</button>
+            </section>
           )}
+          <footer className="vault-path" title={vault}>
+            <span>{vault.split("/").pop()}</span>
+            <button aria-label="保存先を変更" title="保存先を変更" onClick={chooseVault}>変更…</button>
+          </footer>
         </div>
-        {scanIssues.length > 0 && (
-          <section className="note-scan-warning" role="status" aria-label="メモ一覧の読込警告">
-            <p>読み込めない項目があります（{scanIssues.length}件）。読み込めたメモは利用できます。</p>
-            <details>
-              <summary>対象と理由を表示</summary>
-              <pre>{scanIssues.map((issue) => `${issue.path}\n${issue.message}`).join("\n\n")}</pre>
-            </details>
-            <button type="button" onClick={() => { void refreshNotes(); }}>一覧を再読込</button>
-          </section>
-        )}
-        <footer className="vault-path" title={vault}>
-          ◉ {vault.split("/").pop()}
-        </footer>
       </aside>
 
       {draft ? (
         <main className="document-view">
           <header className="document-toolbar">
             <SaveStatus state={saveState} />
-            <button className="delete-button" disabled={isNavigating} onClick={removeNote}>
+            <button disabled={isNavigating} onClick={removeNote}>
               ゴミ箱へ
             </button>
           </header>
@@ -487,8 +502,8 @@ export function App() {
               <p>保存を完了できませんでした。編集内容はこの画面に残っています。</p>
               <p>保存先や外部ファイルを確認して再試行するか、必要な内容を控えてから編集を破棄して閉じてください。</p>
               <div className="save-error-actions">
-                <button className="primary-button" onClick={retrySave}>保存を再試行</button>
-                <button className="discard-draft-button" onClick={discardFailedDraft}>編集を破棄して閉じる</button>
+                <button onClick={retrySave}>保存を再試行</button>
+                <button onClick={discardFailedDraft}>編集を破棄して閉じる</button>
               </div>
             </section>
           )}
@@ -513,9 +528,7 @@ export function App() {
       ) : (
         <main className="empty-view">
           <div>
-            <span>✦</span>
             <h1>メモを選んでください</h1>
-            <p>または、新しい考えを書き始めましょう。</p>
           </div>
         </main>
       )}
@@ -537,7 +550,7 @@ export function App() {
           }}
         >
           {error}
-          <span>×</span>
+          <span aria-hidden="true">×</span>
         </button>
       )}
     </div>

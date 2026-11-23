@@ -152,17 +152,21 @@ export function MemoEditor({ value, onChange, onNavigateBackward, onOpenLink, on
         EditorView.theme({
           "&": { backgroundColor: "transparent", height: "100%" },
           "&.cm-focused": { outline: "none" },
-          ".cm-content": { padding: "20px 4px 120px" },
+          ".cm-activeLine": { backgroundColor: "transparent" },
+          ".cm-button": { background: "ButtonFace", borderColor: "var(--button-border)", color: "ButtonText" },
+          ".cm-content": { caretColor: "CanvasText", padding: "12px 0 80px" },
+          ".cm-cursor, .cm-dropCursor": { borderLeftColor: "CanvasText" },
           ".cm-gutters": { display: "none" },
-          ".cm-scroller": { fontFamily: "var(--font-body)", lineHeight: "1.8" },
-          ".cm-wikilink": {
-            backgroundColor: "var(--accent-soft)",
-            borderRadius: "4px",
-            color: "var(--accent)",
-            cursor: "pointer",
+          ".cm-line": { paddingInline: "var(--editor-inline-padding, 4px)" },
+          ".cm-panels": { backgroundColor: "ButtonFace", color: "ButtonText" },
+          ".cm-panels-top, .cm-panels-bottom": { borderColor: "var(--rule)" },
+          ".cm-scroller": { fontFamily: "inherit", lineHeight: "1.75" },
+          ".cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+            backgroundColor: "var(--selection)",
           },
-          ".cm-zettel-link": {
-            color: "var(--accent)",
+          ".cm-textfield": { backgroundColor: "Field", borderColor: "ButtonBorder", color: "FieldText" },
+          ".cm-wikilink, .cm-zettel-link": {
+            color: "LinkText",
             cursor: "pointer",
             textDecoration: "underline",
             textUnderlineOffset: "3px",
