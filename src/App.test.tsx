@@ -158,6 +158,33 @@ async function editBody(container: HTMLElement, body: string) {
 }
 
 
+describe("サイドメニュー", () => {
+  it("折りたたみ中もエディターを表示し、開き直すと検索と選択を復元する", async () => {
+    resetTest();
+    mockVault();
+    render(<App />);
+
+    const search = await screen.findByRole("searchbox", { name: "メモを検索" });
+    fireEvent.change(search, { target: { value: source.title } });
+    const note = screen.getByRole("button", { name: /リンク元/u });
+    fireEvent.click(note);
+    const title = await screen.findByRole("textbox", { name: "タイトル" });
+
+    const toggle = screen.getByRole("button", { expanded: true, name: "サイドメニューを閉じる" });
+    toggle.focus();
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("button", { expanded: false, name: "サイドメニューを開く" })).toHaveFocus();
+    expect(screen.queryByRole("searchbox", { name: "メモを検索" })).not.toBeInTheDocument();
+    expect(title).toBeVisible();
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole("searchbox", { name: "メモを検索" })).toHaveValue(source.title);
+    expect(screen.getByRole("button", { name: /リンク元/u })).toHaveAttribute("aria-current", "true");
+    resetTest();
+  });
+});
+
 describe("検索範囲と空の一覧", () => {
   it("検索範囲を入力欄の説明として伝え、未一致と空の保存先を区別する", async () => {
     resetTest();
