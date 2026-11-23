@@ -1,0 +1,2 @@
+2026-11-15 16:59:37.418 swift-frontend[68944:4269948] Error received in message reply handler: Connection invalid
+2026-11-15 16:59:37.418 swift-frontend[68944:4269953] Connection Invalid error for service com.apple.hiservices-xpcservice.

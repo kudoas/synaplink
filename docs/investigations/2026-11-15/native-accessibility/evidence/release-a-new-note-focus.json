@@ -1,0 +1,18 @@
+{
+  "bundleIdentifier": "com.kudoas.synaplink.audit.shutdown",
+  "focusedElement": {
+    "AXDescription": "タイトル",
+    "AXEnabled": "1",
+    "AXFocused": "1",
+    "AXHelp": "",
+    "AXRole": "AXTextField",
+    "AXTitle": "タイトル",
+    "AXValue": "無題"
+  },
+  "nodeCount": 218,
+  "pid": 74396,
+  "recordedAtUTC": "2026-11-15T08:19:28Z",
+  "truncated": false,
+  "voiceOverEnabled": false,
+  "observation": "Parent CUA: release A new-note click; child read-only AX: title focused. Parent confirmed sequence matches."
+}
