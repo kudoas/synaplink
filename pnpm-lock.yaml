@@ -173,7 +173,7 @@ settings:
 
 overrides:
   electron-to-chromium: 1.5.486
-  update-browserslist-db: 1.3.4
+  update-browserslist-db: 1.4.0
 
 importers:
 
