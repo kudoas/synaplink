@@ -172,7 +172,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  electron-to-chromium: 1.5.486
+  electron-to-chromium: 1.5.494
   update-browserslist-db: 1.3.4
 
 importers:
